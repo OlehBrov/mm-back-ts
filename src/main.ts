@@ -10,7 +10,20 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 async function runMigrations() {
   const logger = new Logger('Migrations');
   const prisma = new PrismaClient();
-  await prisma.$connect();
+
+  const maxAttempts = 10;
+  const retryDelayMs = 5000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await prisma.$connect();
+      break;
+    } catch (err) {
+      logger.warn(`DB not ready (attempt ${attempt}/${maxAttempts}): ${(err as Error).message}`);
+      if (attempt === maxAttempts) throw err;
+      await new Promise((r) => setTimeout(r, retryDelayMs));
+    }
+  }
 
   const migrationsDir = path.join(__dirname, '../prisma/migrations');
   if (!fs.existsSync(migrationsDir)) {
