@@ -1,0 +1,24 @@
+# ── Stage 1: build ────────────────────────────────────────────────────────────
+FROM node:20-slim AS builder
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY prisma ./prisma
+RUN npx prisma generate
+
+COPY . .
+RUN npm run build
+
+# ── Stage 2: production runtime ───────────────────────────────────────────────
+FROM node:20-slim AS runner
+WORKDIR /app
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/prisma ./prisma
+COPY package*.json ./
+
+EXPOSE 6006
+CMD ["node", "dist/main"]

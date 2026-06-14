@@ -1,0 +1,1658 @@
+{
+  "info": {
+    "_postman_id": "efe1f1bb-8a99-4cb7-8b7b-d7a79f78c595",
+    "name": "Вчасно.Каса Public Fiscal API",
+    "description": "API для інтеграції з кабінетом Вчасно.Каса та фіскалізації чеків.\n\n# Changelog\n\n| **Date** | **Version** | **Changes** | **Author** |\n| --- | --- | --- | --- |\n| 04.08.2022 | 1.0 | Initial version | Антон Биковець |\n| 07.09.2022 | 1.1 | Внесено інформацію про автоматичне відкриття зміни разом із проведенням першого чеку (_Запити на фіскалізацію -> Відкриття зміни_) | Антон Биковець |\n| 16.03.2023 | 1.2 | Додано підтримку чеку видачі готівки (task 14) | Антон Биковець |\n| 18.07.2023 | 1.3 | Додано перегляд фіскалізованого JSON чеку | Євгеній Співак |\n| 18.09.2023 | 1.4 | Розширення виводу ЕПЗ даних | Євгеній Співак |\n| 31.01.2024 | 1.5 | Оновлено документацію. Додано опис error_extra. Прибрано fiscal.receipt.pays.currency (параметр не оброблювався) | Євгеній Співак |\n| 15.02.2024 | 1.6 | Розширено формати поля userinfo: phone  <br>Запит на отримання JSON чеку повертає  <br>shop_type | Євгеній Співак |\n| 23.02.2024 | 1.7 | Додано службові запити: Отримати зміни по касі, Отримати чеки по зміні | Євгеній Співак |\n\n# Загальні вимоги\n\n**HOST -** [kasa.vchasno.ua](https://kasa.vchasno.ua)\n\nДля всіх методів очікується:\n\n- **Content-Type: application/json**\n    \n- **Authorization: <токен_каси>**\n    \n\nТокен каси можна отримати у веб-кабінеті Вчасно.Каса ([https://kasa.vchasno.ua/](https://kasa.vchasno.ua/)), перейшовши у Налаштування конкретної каси (кнопка \"Налаштувати касу\" на вкладці \"Торгові точки та каси\")\n\n<img src=\"https://content.pstmn.io/7247e750-4241-4c32-998e-83e90b4e2d25/MjAyMy0xMi0wNV8xMy01MC5wbmc=\">\n\n**Для фіскалізації чеків необхідно додати ключ у сховище ключів. Зробити це можна у веб-кабінеті, вкладка \"Ключі\".**\n\n<img src=\"https://content.pstmn.io/dee5ffa6-d3dc-452c-b19c-069a35e5ea8d/MjAyMy0xMi0wNV8xMy00Ni5wbmc=\">\n\nТекстові поля мають містити лише наступні дозволені символи:\n\n```\nABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz\nАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя\nІіЇїҐґЄє !.,\"№;:?\\\\*()<>|/@#$%^-_+=~''&{}[]®©«»°±‘’“”–•—™„‰‹› 0123456789\n\n ```",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "21340856"
+  },
+  "item": [
+    {
+      "name": "Запити на фіскалізацію",
+      "item": [
+        {
+          "name": "Відкриття зміни",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"fiscal\": {\r\n        \"task\": 0,\r\n        \"cashier\": \"Постман\"\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/fiscal/execute",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "fiscal",
+                "execute"
+              ]
+            },
+            "description": "Якщо зміну на ПРРО закрито, то при надсиланні першого чеку (task = 1,2,3,4) **автоматично** надсилається запит на відкриття зміни.\n\n## Опис відповіді\n\n### Структура об'єкту info для завдання відкриття зміни\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| task | integer | Тип завдання |\n| dt | string | Дата та час проведення чеку в форматі _YYYYMMDDHHMMSS_ |\n| fisid | string | Фіскальний номер каси |\n| doccode | string | Фіскальний номер чеку |\n| dataid | integer | Номер сформованого пакету |\n| shift_link | integer | Номер зміни каси |\n| cashier | string | Іноформація про касира |\n| isoffline | bool | В якому режимі проведено чек  <br>true - в офлайні  <br>false - в онлайні |\n| safe | float | Сума готівки в касі |\n| dtype | integer | Тип девайсу  <br>0 - тестовий  <br>1 - фіскальний |"
+          },
+          "response": [
+            {
+              "name": "Відкриття зміни",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"fiscal\": {\r\n        \"task\": 0,\r\n        \"cashier\": \"Постман\"\r\n    }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/fiscal/execute",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "fiscal",
+                    "execute"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:05:30 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "430"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"task\": 0,\n    \"type\": 1,\n    \"ver\": 6,\n    \"source\": \"\",\n    \"device\": \"99997655555555\",\n    \"tag\": \"33d2bd1acb739cc9d80a7d24451ba318\",\n    \"dt\": \"20240131100530\",\n    \"res\": 0,\n    \"res_action\": 0,\n    \"errortxt\": \"\",\n    \"warnings\": [],\n    \"info\": {\n        \"task\": 0,\n        \"fisid\": \"99997655555555\",\n        \"dataid\": 195,\n        \"doccode\": \"TEST_JC5D9PZUrd-ZKQ\",\n        \"dt\": \"20240131100530\",\n        \"cashier\": \"Постман\",\n        \"dtype\": 0,\n        \"isprint\": 0,\n        \"isoffline\": false,\n        \"safe\": 0,\n        \"shift_link\": 46\n    },\n    \"error_extra\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Чек продажу",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"userinfo\": {\r\n        \"email\": \"test@vchasno.ua\",\r\n        \"phone\": \"+38093*******\"\r\n    },\r\n    \"fiscal\": {\r\n        \"task\": 1,\r\n        \"cashier\": \"Постман\",\r\n        \"receipt\": {\r\n            \"sum\": 199.99,\r\n            \"round\": 0.01,\r\n            \"comment_up\": \"Зразок! Коментар шапки чеку\",\r\n            \"comment_down\": \"Зразок! ДЯКУЄМО за покупку\",\r\n            \"rows\": [\r\n                {\r\n                    \"code\": \"00001\",\r\n                    \"code1\": \"73463253\",\r\n                    \"code2\": \"54321\",\r\n                    \"code_aa\": [\r\n                        \"XX11111111111\",\r\n                        \"XX11111111112\"\r\n                    ],\r\n                    \"name\": \"Продукт 1\",\r\n                    \"cnt\": 2,\r\n                    \"price\": 55.00,\r\n                    \"disc\": 10.00,\r\n                    \"taxgrp\": \"4\",\r\n                    \"comment\": \"Зразок! Коментар\"\r\n                },\r\n                {\r\n                    \"code\": \"00002\",\r\n                    \"code1\": \"73463254\",\r\n                    \"code2\": \"45667\",\r\n                    \"code_a\": \"XX11111111113\",\r\n                    \"name\": \"Продукт 2\",\r\n                    \"cnt\": 1,\r\n                    \"price\": 89.99,\r\n                    \"disc\": -10.00,\r\n                    \"taxgrp\": 3,\r\n                    \"comment\": \"Зразок! \\\"Have a good day\\\"\"\r\n                }\r\n            ],\r\n            \"pays\": [\r\n                {\r\n                    \"type\": 0,\r\n                    \"sum\": 150.00,\r\n                    \"change\": 50.00,\r\n                    \"comment\": \"Зразок! Тест\"\r\n                },\r\n                {\r\n                    \"type\": 2,\r\n                    \"sum\": 50.00,\r\n                    \"commission\": 1.00,\r\n                    \"paysys\": \"paysys_test\",\r\n                    \"rrn\": \"rrn_test\",\r\n                    \"oper_type\": \"Оплата\",\r\n                    \"cardmask\": \"cardmask****test\",\r\n                    \"term_id\": \"term_id\",\r\n                    \"bank_id\": \"bank_id\",\r\n                    \"auth_code\": \"auth_code\",\r\n                    \"comment\": \"Зразок! СЛАВА*УКРАЇНІ\",\r\n                    \"show_additional_info\": true\r\n                }\r\n            ]\r\n        }\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/fiscal/execute",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "fiscal",
+                "execute"
+              ]
+            },
+            "description": "## Опис відповіді\n\n### Структура об'єкту info для завдань 1,2, 3, 4 (чек продажу та повернення, службове внесення\\\\видача)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| task | integer | Тип завдання |\n| dt | string | Дата та час проведення чеку в форматі _YYYYMMDDHHMMSS_ |\n| fisid | string | Фіскальний номер каси |\n| doccode | string | Фіскальний номер чеку |\n| dataid | integer | Номер сформованого пакету |\n| shift_link | integer | Номер зміни каси |\n| cashier | string | Іноформація про касира |\n| isoffline | bool | В якому режимі проведено чек  <br>true - в офлайні  <br>false - в онлайні |\n| safe | float | Сума готівки в касі |\n| dtype | integer | Тип девайсу  <br>0 - тестовий  <br>1 - фіскальний |\n| qr | string | посилання на електронний фіскальний чек Вчасно.Каса |\n| cancelid | string | Ідентифікатор для відміни операції |"
+          },
+          "response": [
+            {
+              "name": "Чек продажу",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"userinfo\": {\r\n        \"email\": \"test@vchasno.ua\",\r\n        \"phone\": \"+38093*******\"\r\n    },\r\n    \"fiscal\": {\r\n        \"task\": 1,\r\n        \"cashier\": \"Постман\",\r\n        \"receipt\": {\r\n            \"sum\": 199.99,\r\n            \"round\": 0.01,\r\n            \"comment_up\": \"Зразок! Коментар шапки чеку\",\r\n            \"comment_down\": \"Зразок! ДЯКУЄМО за покупку\",\r\n            \"rows\": [\r\n                {\r\n                    \"code\": \"00001\",\r\n                    \"code1\": \"73463253\",\r\n                    \"code2\": \"54321\",\r\n                    \"code_aa\": [\r\n                        \"XX11111111111\",\r\n                        \"XX11111111112\"\r\n                    ],\r\n                    \"name\": \"Продукт 1\",\r\n                    \"cnt\": 2,\r\n                    \"price\": 55.00,\r\n                    \"disc\": 10.00,\r\n                    \"taxgrp\": \"4\",\r\n                    \"comment\": \"Зразок! Коментар\"\r\n                },\r\n                {\r\n                    \"code\": \"00002\",\r\n                    \"code1\": \"73463254\",\r\n                    \"code2\": \"45667\",\r\n                    \"code_a\": \"XX11111111113\",\r\n                    \"name\": \"Продукт 2\",\r\n                    \"cnt\": 1,\r\n                    \"price\": 89.99,\r\n                    \"disc\": -10.00,\r\n                    \"taxgrp\": 3,\r\n                    \"comment\": \"Зразок! \\\"Have a good day\\\"\"\r\n                }\r\n            ],\r\n            \"pays\": [\r\n                {\r\n                    \"type\": 0,\r\n                    \"sum\": 150.00,\r\n                    \"change\": 50.00,\r\n                    \"comment\": \"Зразок! Тест\"\r\n                },\r\n                {\r\n                    \"type\": 2,\r\n                    \"sum\": 50.00,\r\n                    \"commission\": 1.00,\r\n                    \"paysys\": \"paysys_test\",\r\n                    \"rrn\": \"rrn_test\",\r\n                    \"oper_type\": \"Оплата\",\r\n                    \"cardmask\": \"cardmask****test\",\r\n                    \"term_id\": \"term_id\",\r\n                    \"bank_id\": \"bank_id\",\r\n                    \"auth_code\": \"auth_code\",\r\n                    \"comment\": \"Зразок! СЛАВА*УКРАЇНІ\",\r\n                    \"show_additional_info\": true\r\n                }\r\n            ]\r\n        }\r\n    }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/fiscal/execute",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "fiscal",
+                    "execute"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:05:55 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "683"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"task\": 1,\n    \"type\": 1,\n    \"ver\": 6,\n    \"source\": \"POSTMAN\",\n    \"device\": \"99997655555555\",\n    \"tag\": \"af19aacc778509cb4a9fbf28ffd4a68c\",\n    \"dt\": \"20240131100555\",\n    \"res\": 0,\n    \"res_action\": 0,\n    \"errortxt\": \"\",\n    \"warnings\": [],\n    \"info\": {\n        \"task\": 1,\n        \"fisid\": \"99997655555555\",\n        \"dataid\": 196,\n        \"doccode\": \"TEST_KkcD6uzuYeq08g\",\n        \"dt\": \"20240131100555\",\n        \"cashier\": \"Постман\",\n        \"dtype\": 0,\n        \"isprint\": 0,\n        \"isoffline\": false,\n        \"safe\": 150,\n        \"shift_link\": 46,\n        \"docno\": 1,\n        \"cancelid\": \"TEST_KkcD6uzuYeq08g\",\n        \"qr\": \"https://kasa.vchasno.ua/c/TEST_KkcD6uzuYeq08g?id=TEST_KkcD6uzuYeq08g&date=20240131&time=10:05:55&fn=99997655555555&sm=199.99&mac=160cf7bebc397274f765d73d6174b3dfc8b299786070227a31f0483a80c7d9b6\"\n    },\n    \"error_extra\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Чек повернення",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 2,\r\n        \"cashier\": \"Постман\",\r\n        \"receipt\": {\r\n            \"sum\": 199.99,\r\n            \"round\": 0.01,\r\n            \"comment_up\": \"Зразок! Коментар шапки чеку\",\r\n            \"comment_down\": \"Зразок! ДЯКУЄМО за повернення\",\r\n            \"rows\": [\r\n                {\r\n                    \"code\": \"00001\",\r\n                    \"code1\": \"73463253\",\r\n                    \"code2\": \"54321\",\r\n                    \"code_aa\": [\r\n                        \"XX11111111111\",\r\n                        \"XX11111111112\"\r\n                    ],\r\n                    \"name\": \"Продукт 1\",\r\n                    \"cnt\": 2,\r\n                    \"price\": 55.00,\r\n                    \"disc\": 10.00,\r\n                    \"taxgrp\": \"4\",\r\n                    \"comment\": \"Зразок! Коментар\"\r\n                },\r\n                {\r\n                    \"code\": \"00002\",\r\n                    \"code1\": \"73463254\",\r\n                    \"code2\": \"45667\",\r\n                    \"code_a\": \"XX11111111113\",\r\n                    \"name\": \"Продукт 2\",\r\n                    \"cnt\": 1,\r\n                    \"price\": 89.99,\r\n                    \"disc\": -10.00,\r\n                    \"taxgrp\": 3,\r\n                    \"comment\": \"Зразок! \\\"Have a good day\\\"\"\r\n                }\r\n            ],\r\n            \"pays\": [\r\n                {\r\n                    \"type\": 0,\r\n                    \"sum\": 150.00,\r\n                    \"change\": 50.00,\r\n                    \"comment\": \"Зразок! Тест\"\r\n                },\r\n                {\r\n                    \"type\": 2,\r\n                    \"sum\": 50.00,\r\n                    \"commission\": 1.00,\r\n                    \"paysys\": \"paysys_test\",\r\n                    \"rrn\": \"rrn_test\",\r\n                    \"oper_type\": \"Оплата\",\r\n                    \"cardmask\": \"cardmask****test\",\r\n                    \"term_id\": \"term_id\",\r\n                    \"bank_id\": \"bank_id\",\r\n                    \"auth_code\": \"auth_code\",\r\n                    \"comment\": \"Зразок! СЛАВА*УКРАЇНІ\",\r\n                    \"show_additional_info\": true\r\n                }\r\n            ]\r\n        }\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/fiscal/execute",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "fiscal",
+                "execute"
+              ]
+            },
+            "description": "## Опис відповіді\n\nСтруктура відповіді аналогічна чеку продажу (описано вище)"
+          },
+          "response": [
+            {
+              "name": "Чек повернення",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 2,\r\n        \"cashier\": \"Постман\",\r\n        \"receipt\": {\r\n            \"sum\": 199.99,\r\n            \"round\": 0.01,\r\n            \"comment_up\": \"Зразок! Коментар шапки чеку\",\r\n            \"comment_down\": \"Зразок! ДЯКУЄМО за повернення\",\r\n            \"rows\": [\r\n                {\r\n                    \"code\": \"00001\",\r\n                    \"code1\": \"73463253\",\r\n                    \"code2\": \"54321\",\r\n                    \"code_aa\": [\r\n                        \"XX11111111111\",\r\n                        \"XX11111111112\"\r\n                    ],\r\n                    \"name\": \"Продукт 1\",\r\n                    \"cnt\": 2,\r\n                    \"price\": 55.00,\r\n                    \"disc\": 10.00,\r\n                    \"taxgrp\": \"4\",\r\n                    \"comment\": \"Зразок! Коментар\"\r\n                },\r\n                {\r\n                    \"code\": \"00002\",\r\n                    \"code1\": \"73463254\",\r\n                    \"code2\": \"45667\",\r\n                    \"code_a\": \"XX11111111113\",\r\n                    \"name\": \"Продукт 2\",\r\n                    \"cnt\": 1,\r\n                    \"price\": 89.99,\r\n                    \"disc\": -10.00,\r\n                    \"taxgrp\": 3,\r\n                    \"comment\": \"Зразок! \\\"Have a good day\\\"\"\r\n                }\r\n            ],\r\n            \"pays\": [\r\n                {\r\n                    \"type\": 0,\r\n                    \"sum\": 150.00,\r\n                    \"change\": 50.00,\r\n                    \"comment\": \"Зразок! Тест\"\r\n                },\r\n                {\r\n                    \"type\": 2,\r\n                    \"sum\": 50.00,\r\n                    \"commission\": 1.00,\r\n                    \"paysys\": \"paysys_test\",\r\n                    \"rrn\": \"rrn_test\",\r\n                    \"oper_type\": \"Оплата\",\r\n                    \"cardmask\": \"cardmask****test\",\r\n                    \"term_id\": \"term_id\",\r\n                    \"bank_id\": \"bank_id\",\r\n                    \"auth_code\": \"auth_code\",\r\n                    \"comment\": \"Зразок! СЛАВА*УКРАЇНІ\",\r\n                    \"show_additional_info\": true\r\n                }\r\n            ]\r\n        }\r\n    }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/fiscal/execute",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "fiscal",
+                    "execute"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:06:10 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "681"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"task\": 2,\n    \"type\": 1,\n    \"ver\": 6,\n    \"source\": \"POSTMAN\",\n    \"device\": \"99997655555555\",\n    \"tag\": \"c0f82d29eb8df8807bc02ee80be62713\",\n    \"dt\": \"20240131100610\",\n    \"res\": 0,\n    \"res_action\": 0,\n    \"errortxt\": \"\",\n    \"warnings\": [],\n    \"info\": {\n        \"task\": 2,\n        \"fisid\": \"99997655555555\",\n        \"dataid\": 197,\n        \"doccode\": \"TEST_4lbsHSztwgnjlA\",\n        \"dt\": \"20240131100610\",\n        \"cashier\": \"Постман\",\n        \"dtype\": 0,\n        \"isprint\": 0,\n        \"isoffline\": false,\n        \"safe\": 0,\n        \"shift_link\": 46,\n        \"docno\": 1,\n        \"cancelid\": \"TEST_4lbsHSztwgnjlA\",\n        \"qr\": \"https://kasa.vchasno.ua/c/TEST_4lbsHSztwgnjlA?id=TEST_4lbsHSztwgnjlA&date=20240131&time=10:06:10&fn=99997655555555&sm=199.99&mac=30fd0b21f12167413cf021abf1764b85b39cd6aca4cd1bc19ce5105021722d5d\"\n    },\n    \"error_extra\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Службове внесення",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 3,\r\n        \"cashier\": \"Постман\",\r\n        \"cash\": {\r\n            \"type\": 0,\r\n            \"comment_up\": \"Зразок! Тестове внесення готівка\",\r\n            \"sum\": 500.50,\r\n            \"comment_down\": \"Зразок! Внесення\"\r\n        }\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/fiscal/execute",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "fiscal",
+                "execute"
+              ]
+            },
+            "description": "## Опис відповіді\n\nСтруктура відповіді аналогічна чеку продажу (описано вище)."
+          },
+          "response": [
+            {
+              "name": "Службове внесення",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 3,\r\n        \"cashier\": \"Постман\",\r\n        \"cash\": {\r\n            \"type\": 0,\r\n            \"comment_up\": \"Зразок! Тестове внесення готівка\",\r\n            \"sum\": 500.50,\r\n            \"comment_down\": \"Зразок! Внесення\"\r\n        }\r\n    }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/fiscal/execute",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "fiscal",
+                    "execute"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:06:25 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "683"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"task\": 3,\n    \"type\": 1,\n    \"ver\": 6,\n    \"source\": \"POSTMAN\",\n    \"device\": \"99997655555555\",\n    \"tag\": \"fb9eded8df44c8100d3be440cfc92187\",\n    \"dt\": \"20240131100625\",\n    \"res\": 0,\n    \"res_action\": 0,\n    \"errortxt\": \"\",\n    \"warnings\": [],\n    \"info\": {\n        \"task\": 3,\n        \"fisid\": \"99997655555555\",\n        \"dataid\": 198,\n        \"doccode\": \"TEST_-qCdtHKfbOFF3g\",\n        \"dt\": \"20240131100625\",\n        \"cashier\": \"Постман\",\n        \"dtype\": 0,\n        \"isprint\": 0,\n        \"isoffline\": false,\n        \"safe\": 500.5,\n        \"shift_link\": 46,\n        \"docno\": 1,\n        \"cancelid\": \"TEST_-qCdtHKfbOFF3g\",\n        \"qr\": \"https://kasa.vchasno.ua/c/TEST_-qCdtHKfbOFF3g?id=TEST_-qCdtHKfbOFF3g&date=20240131&time=10:06:25&fn=99997655555555&sm=500.50&mac=6a6e9f3ab9c0c7dd1768cc04d2b87eaca3f0485294b9b351d88717642008fe0f\"\n    },\n    \"error_extra\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Службова видача",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 4,\r\n        \"cashier\": \"Постман\",\r\n        \"cash\": {\r\n            \"type\": 0,\r\n            \"comment_up\": \"Зразок! Тестова видача готівка\",\r\n            \"sum\": 500.50,\r\n            \"comment_down\": \"Зразок! Видача\"\r\n        }\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/fiscal/execute",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "fiscal",
+                "execute"
+              ]
+            },
+            "description": "## Опис відповіді\n\nСтруктура відповіді аналогічна чеку продажу (описано вище)"
+          },
+          "response": [
+            {
+              "name": "Службова видача",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 4,\r\n        \"cashier\": \"Постман\",\r\n        \"cash\": {\r\n            \"type\": 0,\r\n            \"comment_up\": \"Зразок! Тестова видача готівка\",\r\n            \"sum\": 500.50,\r\n            \"comment_down\": \"Зразок! Видача\"\r\n        }\r\n    }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/fiscal/execute",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "fiscal",
+                    "execute"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:06:34 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "681"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"task\": 4,\n    \"type\": 1,\n    \"ver\": 6,\n    \"source\": \"POSTMAN\",\n    \"device\": \"99997655555555\",\n    \"tag\": \"92369a6ceeda83224347d1840996b110\",\n    \"dt\": \"20240131100633\",\n    \"res\": 0,\n    \"res_action\": 0,\n    \"errortxt\": \"\",\n    \"warnings\": [],\n    \"info\": {\n        \"task\": 4,\n        \"fisid\": \"99997655555555\",\n        \"dataid\": 199,\n        \"doccode\": \"TEST_VUdHVAf1qD65RA\",\n        \"dt\": \"20240131100633\",\n        \"cashier\": \"Постман\",\n        \"dtype\": 0,\n        \"isprint\": 0,\n        \"isoffline\": false,\n        \"safe\": 0,\n        \"shift_link\": 46,\n        \"docno\": 2,\n        \"cancelid\": \"TEST_VUdHVAf1qD65RA\",\n        \"qr\": \"https://kasa.vchasno.ua/c/TEST_VUdHVAf1qD65RA?id=TEST_VUdHVAf1qD65RA&date=20240131&time=10:06:33&fn=99997655555555&sm=500.50&mac=8267a2e65c595d22424b953a82ff95401249dbc378f222a230f04be8d47cbda4\"\n    },\n    \"error_extra\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Чек видачі готівки",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 14,\r\n        \"cashier\": \"Постман\",\r\n        \"cash\": {\r\n            \"type\": 2,\r\n            \"sum\": 100,\r\n            \"commission\": 1.01,\r\n            \"bank_id\": \"bank_id\",\r\n            \"term_id\": \"terminal_id\",\r\n            \"paysys\": \"paysys_test\",\r\n            \"rrn\": \"rrn_test\",\r\n            \"cardmask\": \"cardmask****test\",\r\n            \"auth_code\": \"auth_code\",\r\n            \"comment_up\": \"Зразок! Верхній комент\",\r\n            \"comment_down\": \"Зразок Нижній комент\"\r\n        }\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/fiscal/execute",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "fiscal",
+                "execute"
+              ]
+            },
+            "description": "## Опис відповіді\n\nСтруктура відповіді аналогічна чеку продажу (описано вище)"
+          },
+          "response": [
+            {
+              "name": "Чек видачі готівки",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 14,\r\n        \"cashier\": \"Постман\",\r\n        \"cash\": {\r\n            \"type\": 2,\r\n            \"sum\": 100,\r\n            \"commission\": 1.01,\r\n            \"bank_id\": \"bank_id\",\r\n            \"term_id\": \"terminal_id\",\r\n            \"paysys\": \"paysys_test\",\r\n            \"rrn\": \"rrn_test\",\r\n            \"cardmask\": \"cardmask****test\",\r\n            \"auth_code\": \"auth_code\",\r\n            \"comment_up\": \"Зразок! Верхній комент\",\r\n            \"comment_down\": \"Зразок Нижній комент\"\r\n        }\r\n    }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/fiscal/execute",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "fiscal",
+                    "execute"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:12:45 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "685"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"task\": 14,\n    \"type\": 1,\n    \"ver\": 6,\n    \"source\": \"POSTMAN\",\n    \"device\": \"99997655555555\",\n    \"tag\": \"77ea6949f9f1bc8cdef130a7f44b9b19\",\n    \"dt\": \"20240131101244\",\n    \"res\": 0,\n    \"res_action\": 0,\n    \"errortxt\": \"\",\n    \"warnings\": [],\n    \"info\": {\n        \"task\": 14,\n        \"fisid\": \"99997655555555\",\n        \"dataid\": 201,\n        \"doccode\": \"TEST_GFwPnmQngQCYOQ\",\n        \"dt\": \"20240131101244\",\n        \"cashier\": \"Постман\",\n        \"dtype\": 0,\n        \"isprint\": 0,\n        \"isoffline\": false,\n        \"safe\": 400.5,\n        \"shift_link\": 46,\n        \"docno\": 1,\n        \"cancelid\": \"TEST_GFwPnmQngQCYOQ\",\n        \"qr\": \"https://kasa.vchasno.ua/c/TEST_GFwPnmQngQCYOQ?id=TEST_GFwPnmQngQCYOQ&date=20240131&time=10:12:44&fn=99997655555555&sm=101.01&mac=e6786c14ec950fd860a7a9f756d93af6fae198ab706c2bebc69818d376b8e6f6\"\n    },\n    \"error_extra\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "X-звіт",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 10,\r\n        \"cashier\": \"Постман\"\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/fiscal/execute",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "fiscal",
+                "execute"
+              ]
+            },
+            "description": "## Опис відповіді\n\n### Структура об'єкту info для завдань 10, 11 (X\\\\Z-звіт)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| task | integer | Тип завдання |\n| dt | string | Дата та час проведення чеку в форматі _YYYYMMDDHHMMSS_ |\n| fisid | string | Фіскальний номер каси |\n| doccode | string | Фіскальний номер чеку (для X-звіту повертається пусте значення) |\n| docno | integer | Порядковий номер Z-звіту |\n| dataid | integer | Номер сформованого пакету |\n| shift_link | integer | Номер зміни каси |\n| cashier | string | Іноформація про касира |\n| isoffline | bool | В якому режимі проведено чек  <br>true - в офлайні  <br>false - в онлайні |\n| safe | float | Сума готівки в касі |\n| dtype | integer | Тип девайсу  <br>0 - тестовий  <br>1 - фіскальний |\n| taxes | massive of objects | Підсумки по податкам в розрізі податкових груп |\n| pays | massive of objects | Підсумки по видам оплат |\n| money | massive of objects | Підсумки по службовим внесенням\\\\видачам |\n| cash | massive of objects | Підсумки по операціям видачі готівки |\n| summary | object | Загальні підсумки по обороту, податкам, знижкам по продажам і поверненням за зміну |\n| receipt | object | Підсумки по кількості чеків |\n\n#### Структура об'єктів масиву info.taxes (підсумки по податкам)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| gr_code | integer | Код податкової групи |\n| base_sum_p | float | База, обкладена податком і акцизом (сума) по продажам |\n| base_sum_m | float | База, обкладена податком і акцизом (сума) по поверненням |\n| tax_name | string | Назва податку |\n| tax_fname | string | Назва податку (повна) |\n| tax_lit | string | Буква, що позначає податок |\n| tax_percent | float | Ставка податку |\n| tax_sum_p | float | Сума податку по продажам |\n| tax_sum_m | float | Сума податку по поверненням |\n| ex_name | string | Назва акцизу |\n| ex_percent | float | Ставка акцизу |\n| ex_sum_p | float | Сума акцизу по продажам |\n| ex_sum_m | float | Сума акцизу по поверненням |\n\n#### Структура об'єктів info.pays/money (підсумки по видам оплат, службовим внесенням\\\\видачам)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| type | integer | Код виду оплати |\n| name | string | Назва виду оплати |\n| sum_p | float | Сума по виду оплати по продажам |\n| sum_m | float | Сума по виду оплати по поверненням |\n| round_pu | float | Сума округлень, прийнятих в більшу сторону |\n| round_pd | float | Сума округлень прийнятих в меншу сторону |\n| round_mu | float | Сума округлень виданих в меншу сторону |\n| round_md | float | Сума округлень виданих в меншу сторону |\n\n#### Структура об'єктів info.сash (підсумки по операціям видачі готівки)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| type | integer | Код виду оплати |\n| name | string | Назва виду оплати |\n| sum_m | float | Сума виданої готівки |\n| round_mu | float | Сума комісії |\n\n#### Структура об'єкту info.receipt (підсумки по кількості чеків)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| count_p | integer | Кількість чеків продажу |\n| count_m | integer | Кількість чеків повернень |\n| last_docno_p | integer | Останній локальний номер чеку продажу в зміні |\n| last_docno_m | integer | Останній локальний номер чеку повернення в зміні |\n| count_transfer | integer | Кількість чеків переказу коштів |\n\n#### Структура об'єкту info.summary (загальні підсумки)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| base_p | float | Загальний обіг по продажам (сума всіх податкових баз по продажам) |\n| base_m | float | Загальний обіг по поверненням (сума всіх податкових баз по поверненням) |\n| taxex_p | float | Загальна сума всіх податків і акцизів по продажам |\n| taxex_m | float | Загальна сума всіх податків і акцизів по поверненням |\n| disc_p | float | Загальна знижка по всім товарним позиціям всіх чеків |\n| disc_m | float | Загальна націнка по всім товарним позиціям всіх чеків |\n\n#### Структура об'єкту info.money_transfer\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| type | integer | Код виду оплати |\n| name | string | Назва |\n| sum_p | float | Чек переказу (гроші прийшли до нас) |\n| sum_m | float | Чек видачі коштів при переказі (кошти покидають нас) |\n| commission_p | float | Комісія переказу |\n| commission_m | float | Комісія видачі коштів |"
+          },
+          "response": [
+            {
+              "name": "X-звіт",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 10,\r\n        \"cashier\": \"Постман\"\r\n    }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/fiscal/execute",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "fiscal",
+                    "execute"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:13:02 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Transfer-Encoding",
+                  "value": "chunked"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                },
+                {
+                  "key": "Content-Encoding",
+                  "value": "gzip"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"task\": 10,\n    \"type\": 1,\n    \"ver\": 6,\n    \"source\": \"POSTMAN\",\n    \"device\": \"99997655555555\",\n    \"tag\": \"149978c3382d7381fbe1cb4539661c20\",\n    \"dt\": \"20240131101302\",\n    \"res\": 0,\n    \"res_action\": 0,\n    \"errortxt\": \"\",\n    \"warnings\": [],\n    \"info\": {\n        \"task\": 10,\n        \"fisid\": \"99997655555555\",\n        \"dataid\": 0,\n        \"doccode\": \"\",\n        \"dt\": \"20240131101302\",\n        \"cashier\": \"Постман\",\n        \"dtype\": 0,\n        \"isprint\": 0,\n        \"isoffline\": false,\n        \"safe\": 400.5,\n        \"shift_link\": 0,\n        \"docno\": 0,\n        \"receipt\": {\n            \"count_p\": 1,\n            \"count_m\": 1,\n            \"count_14\": 1,\n            \"count_transfer\": 0,\n            \"last_docno_p\": 1,\n            \"last_docno_m\": 1\n        },\n        \"summary\": {\n            \"base_p\": 199.99,\n            \"base_m\": 199.99,\n            \"taxex_p\": 27.17,\n            \"taxex_m\": 27.17,\n            \"disc_p\": 0,\n            \"disc_m\": 0\n        },\n        \"taxes\": [\n            {\n                \"gr_code\": 3,\n                \"base_sum_p\": 99.99,\n                \"base_sum_m\": 99.99,\n                \"base_tax_sum_p\": 95.23,\n                \"base_tax_sum_m\": 95.23,\n                \"base_ex_sum_p\": 99.99,\n                \"base_ex_sum_m\": 99.99,\n                \"tax_name\": \"ПДВ_Г\",\n                \"tax_fname\": \"ПДВ 20% + акциз 5%\",\n                \"tax_lit\": \"ГД\",\n                \"tax_percent\": 20,\n                \"tax_sum_p\": 15.87,\n                \"tax_sum_m\": 15.87,\n                \"ex_name\": \"Акцизний податок 5% Д\",\n                \"ex_percent\": 5,\n                \"ex_sum_p\": 4.76,\n                \"ex_sum_m\": 4.76\n            },\n            {\n                \"gr_code\": 4,\n                \"base_sum_p\": 100,\n                \"base_sum_m\": 100,\n                \"base_tax_sum_p\": 100,\n                \"base_tax_sum_m\": 100,\n                \"base_ex_sum_p\": 0,\n                \"base_ex_sum_m\": 0,\n                \"tax_name\": \"ПДВ_В\",\n                \"tax_fname\": \"ПДВ 7%\",\n                \"tax_lit\": \"В\",\n                \"tax_percent\": 7,\n                \"tax_sum_p\": 6.54,\n                \"tax_sum_m\": 6.54,\n                \"ex_name\": \"\",\n                \"ex_percent\": 0,\n                \"ex_sum_p\": 0,\n                \"ex_sum_m\": 0\n            }\n        ],\n        \"pays\": [\n            {\n                \"type\": 0,\n                \"name\": \"Готівка\",\n                \"sum_p\": 150,\n                \"sum_m\": 150,\n                \"round_pu\": 0.01,\n                \"round_pd\": 0,\n                \"round_mu\": 0.01,\n                \"round_md\": 0\n            },\n            {\n                \"type\": 2,\n                \"name\": \"Картка\",\n                \"sum_p\": 50,\n                \"sum_m\": 50,\n                \"round_pu\": 0,\n                \"round_pd\": 0,\n                \"round_mu\": 0,\n                \"round_md\": 0\n            }\n        ],\n        \"money\": [\n            {\n                \"type\": 0,\n                \"name\": \"Готівка\",\n                \"sum_p\": 1001,\n                \"sum_m\": 500.5,\n                \"round_pu\": 0,\n                \"round_pd\": 0,\n                \"round_mu\": 0,\n                \"round_md\": 0\n            }\n        ],\n        \"cash\": [\n            {\n                \"type\": 2,\n                \"name\": \"Картка\",\n                \"sum_p\": 0,\n                \"sum_m\": 100,\n                \"round_pu\": 0,\n                \"round_pd\": 0,\n                \"round_mu\": 1.01,\n                \"round_md\": 0\n            }\n        ],\n        \"money_transfer\": []\n    },\n    \"error_extra\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Z-звіт",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 11,\r\n        \"cashier\": \"Постман\"\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/fiscal/execute",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "fiscal",
+                "execute"
+              ]
+            },
+            "description": "## Опис відповіді\n\nСтруктура відповіді аналогічна X-звіту (описано вище)"
+          },
+          "response": [
+            {
+              "name": "Z-звіт",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"source\": \"POSTMAN\",\r\n    \"fiscal\": {\r\n        \"task\": 11,\r\n        \"cashier\": \"Постман\"\r\n    }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/fiscal/execute",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "fiscal",
+                    "execute"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:13:20 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Transfer-Encoding",
+                  "value": "chunked"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                },
+                {
+                  "key": "Content-Encoding",
+                  "value": "gzip"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"task\": 11,\n    \"type\": 1,\n    \"ver\": 6,\n    \"source\": \"POSTMAN\",\n    \"device\": \"99997655555555\",\n    \"tag\": \"704e5fca77edf44d2ce8e379bdd68429\",\n    \"dt\": \"20240131101319\",\n    \"res\": 0,\n    \"res_action\": 0,\n    \"errortxt\": \"\",\n    \"warnings\": [],\n    \"info\": {\n        \"task\": 11,\n        \"fisid\": \"99997655555555\",\n        \"dataid\": 202,\n        \"doccode\": \"TEST_cTMHA3qiU6DDvA\",\n        \"dt\": \"20240131101319\",\n        \"cashier\": \"Постман\",\n        \"dtype\": 0,\n        \"isprint\": 0,\n        \"isoffline\": false,\n        \"safe\": 400.5,\n        \"shift_link\": 46,\n        \"docno\": 46,\n        \"receipt\": {\n            \"count_p\": 1,\n            \"count_m\": 1,\n            \"count_14\": 1,\n            \"count_transfer\": 0,\n            \"last_docno_p\": 1,\n            \"last_docno_m\": 1\n        },\n        \"summary\": {\n            \"base_p\": 199.99,\n            \"base_m\": 199.99,\n            \"taxex_p\": 27.17,\n            \"taxex_m\": 27.17,\n            \"disc_p\": 0,\n            \"disc_m\": 0\n        },\n        \"taxes\": [\n            {\n                \"gr_code\": 3,\n                \"base_sum_p\": 99.99,\n                \"base_sum_m\": 99.99,\n                \"base_tax_sum_p\": 95.23,\n                \"base_tax_sum_m\": 95.23,\n                \"base_ex_sum_p\": 99.99,\n                \"base_ex_sum_m\": 99.99,\n                \"tax_name\": \"ПДВ_Г\",\n                \"tax_fname\": \"ПДВ 20% + акциз 5%\",\n                \"tax_lit\": \"ГД\",\n                \"tax_percent\": 20,\n                \"tax_sum_p\": 15.87,\n                \"tax_sum_m\": 15.87,\n                \"ex_name\": \"Акцизний податок 5% Д\",\n                \"ex_percent\": 5,\n                \"ex_sum_p\": 4.76,\n                \"ex_sum_m\": 4.76\n            },\n            {\n                \"gr_code\": 4,\n                \"base_sum_p\": 100,\n                \"base_sum_m\": 100,\n                \"base_tax_sum_p\": 100,\n                \"base_tax_sum_m\": 100,\n                \"base_ex_sum_p\": 0,\n                \"base_ex_sum_m\": 0,\n                \"tax_name\": \"ПДВ_В\",\n                \"tax_fname\": \"ПДВ 7%\",\n                \"tax_lit\": \"В\",\n                \"tax_percent\": 7,\n                \"tax_sum_p\": 6.54,\n                \"tax_sum_m\": 6.54,\n                \"ex_name\": \"\",\n                \"ex_percent\": 0,\n                \"ex_sum_p\": 0,\n                \"ex_sum_m\": 0\n            }\n        ],\n        \"pays\": [\n            {\n                \"type\": 0,\n                \"name\": \"Готівка\",\n                \"sum_p\": 150,\n                \"sum_m\": 150,\n                \"round_pu\": 0.01,\n                \"round_pd\": 0,\n                \"round_mu\": 0.01,\n                \"round_md\": 0\n            },\n            {\n                \"type\": 2,\n                \"name\": \"Картка\",\n                \"sum_p\": 50,\n                \"sum_m\": 50,\n                \"round_pu\": 0,\n                \"round_pd\": 0,\n                \"round_mu\": 0,\n                \"round_md\": 0\n            }\n        ],\n        \"money\": [\n            {\n                \"type\": 0,\n                \"name\": \"Готівка\",\n                \"sum_p\": 1001,\n                \"sum_m\": 500.5,\n                \"round_pu\": 0,\n                \"round_pd\": 0,\n                \"round_mu\": 0,\n                \"round_md\": 0\n            }\n        ],\n        \"cash\": [\n            {\n                \"type\": 2,\n                \"name\": \"Картка\",\n                \"sum_p\": 0,\n                \"sum_m\": 100,\n                \"round_pu\": 0,\n                \"round_pd\": 0,\n                \"round_mu\": 1.01,\n                \"round_md\": 0\n            }\n        ],\n        \"money_transfer\": []\n    },\n    \"error_extra\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Статус пРРО",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"fiscal\": {\r\n        \"task\": 18\r\n    }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/fiscal/execute",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "fiscal",
+                "execute"
+              ]
+            },
+            "description": "## Опис відповіді\n\n### Структура об'єкту info для завдання 18 (статус пРРО)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| fisid | string | Фіскальний номер каси |\n| isFis | integer | ПРРО є фіскальним  <br>**\\-1** - невідомо  <br>**0** - не фіскальний (тестовий)  <br>**1** - фіскальний |\n| shift_status | integer | Статус зміни:  <br>**\\-1** - невідомо  <br>**0** - закрита  <br>**1** - відкрита  <br>**2** - заблокована |\n| shift_dt | string | Дата та час відкриття активної зміни:  <br>**\"\"** - невідомо  <br>**0** - зміну закрито  <br>**інакше** - дата и та час відкриття в форматі *YYYYMMDDHHMMSS* |\n| online_status | integer | Статус зв'язку з ДФС:  <br>**\\-1** - невідомо  <br>**0** - online  <br>**1** - offline  <br>**2** - заблоковано по офлайну |\n| sign_status | integer | Статус ЕЦП:  <br>**\\-1** - невідомо  <br>**0** - підпис не використовується  <br>**1** - підпис є і нема попереджень  <br>**2** - підпис є попередження  <br>**3** - підпису нема або помилка  <br>****зараз завжди повертається -1, інші статуси буде імплементовано пізніше*** |\n| safe | float | Сума залишку готівки в касі:  <br>**\\-1** - невідомо  <br>**\\>= 0** - сума |"
+          },
+          "response": [
+            {
+              "name": "Статус пРРО",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"fiscal\": {\r\n        \"task\": 18\r\n    }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/fiscal/execute",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "fiscal",
+                    "execute"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:13:41 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "336"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"task\": 18,\n    \"type\": 1,\n    \"ver\": 6,\n    \"source\": \"\",\n    \"device\": \"99997655555555\",\n    \"tag\": \"8d39a338de766c4be5bcb622a05d3185\",\n    \"dt\": \"20240131101341\",\n    \"res\": 0,\n    \"res_action\": 0,\n    \"errortxt\": \"\",\n    \"warnings\": [],\n    \"info\": {\n        \"fisid\": \"99997655555555\",\n        \"isFis\": 0,\n        \"shift_status\": 0,\n        \"shift_dt\": \"20240131100530\",\n        \"online_status\": 0,\n        \"sign_status\": -1,\n        \"safe\": 400.5\n    },\n    \"error_extra\": null\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Всі запити на фіскалізацію виконуються через URL **POST /api/v3/fiscal/execute**\n\nМінімальний таймаут на запити фіскалізації - 25 секунд\n\nПри виконанні запиту чеку (task: 1, 2, 3, 4, 14) на закритій зміні каси автоматично надсилається запит на відкриття зміни (task: 0)\n\n### Структура запиту:\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| dt | string | Дата і час завдання в форматі _YYYYMMDDHHMMSS_.  <br>Використовується як дата і час для чеку  <br>**Необов'язкове поле**, якщо не передати - використається час серверу  <br>**ВАЖЛИВО!!!** Дата чеку, що проводиться, має бути >= дати попереднього проведеного чеку. В іншому випадку ДПС не прийме такий чек. |\n| tag | string | Мітка завдання для ідентифікації відповіді. Може бути довільною. Для уникнення **дублювання чеків,** повторні запити слід надсилати з параметром “tag” рівним початковому запиту/відповіді.  <br>**Необов'язкове поле**, якщо не передати чи передати пустим, сервером буде згенеровано випадковий uuid для цього поля |\n| source | string | Назва джерела завдання, може бути довільною. Слугує для кращої ідентифікації в логах  <br>**Необов'язкове поле** |\n| fiscal | object | Об'єкт з реквізитами фіскального завдання |\n| userinfo | object | Дані, куди надсилати посилання на чек (для завдань 1, 2, 3, 4).  <br>**Необов'язкове поле**  <br>  <br>Об'єкт виду:  <br>{  <br>\"email\" : \"...\",  <br>\"phone\": \".+380XXXXXXXXX\"  <br>}  <br>  <br>Очікуємо формат +380XXXXXXXXX, та якщо ви вкажете додаткові розділові знаки у номері (наприклад +380ХХ-ХХХ-ХХ-ХХ), ми спробуємо конвертувати його у потрібний формат  <br>  <br>У випадку, якщо телефон чи емейл вказано невірно - повідомлення не буде відправлено, але на проведення чеку це ніяк не вплине (не буде валідаційної помилки). |\n\n### Структура об'єкту fiscal (реквізити фіскального завдання)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| task | integer | Тип фіскального завдання:  <br>**0 - відкриття зміни,**  <br>**1 - чек продажу,**  <br>**2 - чек повернення,**  <br>**3 - службове внесення,**  <br>**4 - службова видача,**  <br>14 - **чек видачі готівки**  <br>**10 - X-звіт,**  <br>**11 - Z-звіт,**  <br>**18 - статус пРРО.** |\n| cashier | string | Інформація про касира  <br>**Необов'язкове поле** |\n| receipt | object | Поля чеку (для завдань 1 і 2) |\n| cash | object | Поля внесення/видачі і чеку видачі готівки (для завдань 3, 4 і 14) |\n\n### Структура об'єкту fiscal.receipt (поля чеку)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| sum | float | Сума чеку (2 знаки після коми) з урахуванням всіх знижок |\n| round | float | Сума округлення (входить до суми чеку. На цю суму має відрізнятись сума чеку від сум по всіх видам оплати |\n| comment_up | string | Коментар, який друкується перед списком товарів  <br>**Необов'язкове поле** |\n| comment_down | string | Коментар, який друкується внизу чеку  <br>**Необов'язкове поле** |\n| rows | Massive of objects | Рядки чеку |\n| pays | Massive of objects | Оплати чеку (по видам) |\n\n##### Структура об'єкту fiscal.receipt.rows (рядки чеку)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| code | string | Артикул товару в обліковій системі підприємства  <br>**Необов'язкове поле** |\n| code1 | string | ШК товару  <br>**Необов'язкове поле** |\n| code2 | string | Код УКТЗЕД  <br>**Необов'язкове поле** |\n| code3 | string | Код ДКПП  <br>**Необов'язкове поле** |\n| code_a | string | Код акцизної марки товару  <br>**Необов'язкове поле** |\n| code_aa | Massive | Масив акзизних марок товарів (для випадку, коли для одної позиції декілька марок)  <br>**Необов'язкове поле** |\n| name | string | Назва товару |\n| cnt | float | Кількість товару (не більше 3х знаків після коми) |\n| price | float | Ціна товару (2 знаки після коми)  <br>Може бути пустим, тоді рахується автоматично шляхом поділу поля cost на cnt і математичним округленням |\n| disc | float | Знижка на рядок чеку (2 знаки після коми) |\n| cost | float | Сума по рядку до знижки  <br>Може бути пустим, тоді рахується автоматично шляхом множення поля cnt на price і математичним округленням |\n| taxgrp | integer | Код податкової групи:  <br>**1 ПДВ 20%**  <br>**2 Без ПДВ**  <br>**3 ПДВ 20% + акциз 5%**  <br>**4 ПДВ 7%**  <br>**5 ПДВ 0%**  <br>**6 Без ПДВ + акциз 5%**  <br>**7 Не є об\\`єктом ПДВ**  <br>**8 ПДВ 20% + ПФ 7.5%**  <br>**9 ПДВ 14%**  <br>**10 ПДФО 18% ВЗ 1.5%** |\n| comment | string | Коментар на рядок  <br>**Необов'язкове поле** |\n\n##### Структура об'єкту fiscal.receipt.pays (Оплати чеку (по видам))\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| type | integer | Код виду оплати. Дефолтні коди:  <br>**0 Готівка**  <br>**1 Безготівка**  <br>**2 Картка**  <br>**3 Передплата**  <br>**4 Післясплата**  <br>**5 Кредит**  <br>**6 Сертифікат**  <br>**11 Бонусні бали**  <br>**12 Погашення кредиту** |\n| sum | float | Сума оплати (2 знаки після коми) |\n| comment | string | Коментар на рядок оплати  <br>**Необов'язкове поле** |\n| change | float | Решта (для оплати готівкою)  <br>Для правильного внесення оплати з рештою необхідно  <br>\\- в поле **sum** внести суму, яка іде в залік,  <br>\\- в поле **change** - решту.  <br>Загальна сума, яка отримана від покупця, розраховується як sum+change |\n| paysys | string | Назва платіжної системи (для оплати карткою)  <br>**Необов'язкове поле** |\n| rrn | string | Код транзакції (для оплати карткою)  <br>**Необов'язкове поле** |\n| cardmask | string | Замаскований номер картки (для оплати карткою)  <br>**Необов'язкове поле** |\n| term_id | string | Ідентифікатор платіжного терміналу (для оплати карткою)  <br>**Необов'язкове поле** |\n| bank_id | string | Ідентифікатор банку (для оплати карткою)  <br>**Необов'язкове поле** |\n| auth_code | string | Код авторизації (для оплати карткою)  <br>**Необов'язкове поле** |\n| oper_type | string | Вид операції  <br>**Необов'язкове поле** |\n| show_additional_info | bool | Для типів оплати != Готівка виводити поля \"Касир\", \"Держатель ЕПЗ\". За замовчуванням true.  <br>**Необов'язкове поле** |\n| commission | float | Сума комісії |\n\n### Структура об'єкту fiscal.cash (Поля внесення/видачі, чеку видачі готівки)\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| type | integer | Код виду оплати. Дефолтні коди:  <br>**0 Готівка**  <br>**1 Безготівка**  <br>**2 Картка**  <br>**3 Передплата**  <br>**4 Післясплата**  <br>**5 Кредит**  <br>**6 Сертифікат**  <br>**11 Бонусні бали**  <br>**12 Погашення кредиту** |\n| sum | float | Сума внесення\\\\видачі (2 знаки після коми) |\n| comment_up | string | Коментар, який друкується перед сумою  <br>**Необов'язкове поле** |\n| comment_down | string | Коментар, який друкується після суми  <br>**Необов'язкове поле** |\n| paysys | string | Назва платіжної системи **(лише для чеку видачі готівки)** |\n| rrn | string | Код транзакції  <br>**Обовя'зкове поле для task 4, 16** |\n| cardmask | string | Замаскований номер картки **(лише для чеку видачі готівки)** |\n| term_id | string | Ідентифікатор платіжного терміналу **(лише для чеку видачі готівки)** |\n| bank_id | string | Ідентифікатор банку **Обовя'зкове поле для task 4, 16** |\n| auth_code | string | Код авторизації **(лише для чеку видачі готівки)** |\n| commission | float | Сума комісії **(лише для чеку видачі готівки)** |\n\n## Структура відповіді\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| ver | integer | Версія схеми (службове поле) |\n| source | string | Назва джерела завдання |\n| device | string | Фіскальний номер каси |\n| tag | string | Мітка завдання для ідентифікації відповіді |\n| dt | string | Дата та час виконання в форматі _YYYYMMDDHHMMSS_ |\n| res | integer | Код результату  <br>0 - ОК  <br>\\> 0 - код помилки |\n| res_action | integer | Подальші рекомендовані дії для збереження транзакційної цілісності  <br>О - ОК, можна переходити до наступного завдання  <br>1 - помилка, завдання не пройшло, необхідно повторити запит  <br>2 - помилка + колізія. Виправлення колізії буде виконано при наступному запиті, тому необхідно виконати повтор для збереження транзакційності  <br>3 - помилка, що потребує зупинки та ручного фіксу |\n| errortxt | string | Текстова інформація про помилку |\n| warnings | massive of objects | Масив об'єктів вигляду  <br>{code: 0, wtxt: \"...\"} з кодами та текстами попереджень, які потрібно донести до касира. Перелік кодів та текстів у розділі **\"Опис помилок\"** |\n| task | integer | Тип завдання |\n| info | Object | Вихідні дані  <br>_Опис об'єкту info для конкретного типу завдання приведено у самих запитах нижче_ |\n| error_extra | object | null |"
+    },
+    {
+      "name": "Службові запити",
+      "item": [
+        {
+          "name": "Отримати JSON завдання фіскального чеку",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "https://{{host}}/api/v3/check-task/<check_fisn>",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "check-task",
+                "<check_fisn>"
+              ]
+            },
+            "description": "Запит на отримання JSON-у запиту фіскалізованого чеку. Повертає весь json body, по якому було створено чек\n\n**check_fisn - Фіскальний номер чеку**\n\n## Опис відповіді\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| fiscal_number | string | Фіскальний номер чеку |\n| task | object | boby чеку (опис вище) |"
+          },
+          "response": [
+            {
+              "name": "Отримати JSON завдання фіскального чеку",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "url": {
+                  "raw": "https://{{host}}/api/v3/check-task/TEST_KkcD6uzuYeq08g",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "check-task",
+                    "TEST_KkcD6uzuYeq08g"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:14:59 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Transfer-Encoding",
+                  "value": "chunked"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                },
+                {
+                  "key": "Strict-Transport-Security",
+                  "value": "max-age=31536000; includeSubDomains"
+                },
+                {
+                  "key": "Content-Encoding",
+                  "value": "gzip"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"fiscal_number\": \"TEST_KkcD6uzuYeq08g\",\n    \"task\": {\n        \"tag\": \"af19aacc778509cb4a9fbf28ffd4a68c\",\n        \"device\": \"99997655555555\",\n        \"fiscal\": {\n            \"task\": 1,\n            \"cashier\": \"Постман\",\n            \"receipt\": {\n                \"sum\": 199.99,\n                \"pays\": [\n                    {\n                        \"sum\": 150,\n                        \"type\": 0,\n                        \"change\": 50,\n                        \"comment\": \"Зразок! Тест\"\n                    },\n                    {\n                        \"rrn\": \"rrn_test\",\n                        \"sum\": 50,\n                        \"type\": 2,\n                        \"paysys\": \"paysys_test\",\n                        \"bank_id\": \"bank_id\",\n                        \"comment\": \"Зразок! СЛАВА*УКРАЇНІ\",\n                        \"term_id\": \"term_id\",\n                        \"cardmask\": \"cardmask****test\",\n                        \"auth_code\": \"auth_code\",\n                        \"oper_type\": \"Оплата\",\n                        \"commission\": 1,\n                        \"show_additional_info\": true\n                    }\n                ],\n                \"rows\": [\n                    {\n                        \"cnt\": 2,\n                        \"code\": \"00001\",\n                        \"disc\": 10,\n                        \"name\": \"Продукт 1\",\n                        \"code1\": \"73463253\",\n                        \"code2\": \"54321\",\n                        \"price\": 55,\n                        \"taxgrp\": \"4\",\n                        \"code_aa\": [\n                            \"XX11111111111\",\n                            \"XX11111111112\"\n                        ],\n                        \"comment\": \"Зразок! Коментар\"\n                    },\n                    {\n                        \"cnt\": 1,\n                        \"code\": \"00002\",\n                        \"disc\": -10,\n                        \"name\": \"Продукт 2\",\n                        \"code1\": \"73463254\",\n                        \"code2\": \"45667\",\n                        \"price\": 89.99,\n                        \"code_a\": \"XX11111111113\",\n                        \"taxgrp\": 3,\n                        \"comment\": \"Зразок! \\\"Have a good day\\\"\"\n                    }\n                ],\n                \"round\": 0.01,\n                \"comment_up\": \"Зразок! Коментар шапки чеку\",\n                \"comment_down\": \"Зразок! ДЯКУЄМО за покупку\"\n            }\n        },\n        \"source\": \"POSTMAN\",\n        \"userinfo\": {\n            \"email\": \"test@vchasno.ua\",\n            \"phone\": \"+38093*******\"\n        }\n    }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Отримати JSON чеку",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}"
+              }
+            ],
+            "url": {
+              "raw": "https://{{host}}/c/{fiscal_number}.json",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "c",
+                "{fiscal_number}.json"
+              ]
+            },
+            "description": "Запит на отримання фіскалізованого чеку у форматі JSON. Цей роут не працює з сервісними чеками та Z-звітом.\n\nfiscal_number **\\- Фіскальний номер чеку**\n\nТипи даних:\n\n- кількість одиниць - decimal рядок\n    \n- вага - 3 знаки - '1.000'\n    \n- сума - decimal рядок\n    \n- відсотки - 2 знаки - '55.00'\n    \n\n## Опис полів:\n\n| **Tag** | **Description** |\n| --- | --- |\n| fiscal_number | Фіскальний номер чеку |\n| company_name | Назва компанії |\n| notification_company_name | Назва компанії для сповіщень |\n| company_edrpou | ЄДРПОУ |\n| company_tax_number | ПН |\n| shop_name | Назва Торгової Точки |\n| shop_type | Тип Торгової Точки |\n| shop_address | Адреса ТТ |\n| rro_fiscal_number | Фіскальний номер ПРРО |\n| is_offline | Чи видано чек в офлайні |\n| is_test | Чи це тестовий чек |\n| date_created | Дата створення запису чеку |\n| check_flow | 0-продаж,1-повернення,2-службове внесення-винесення,4-переказ коштів,7-видача коштів при переказі,14-видача готівки |\n| check_url | Посилання на чек в нашому кабінеті |\n| qr_content | Сформований рядок для QR коду в чеці |\n| target_url | Посилання на чек в ДПС |\n| data | Обʼєкт з деталями по чеку |\n\n## Об'єкт data\n\n| **Tag** | **Description** |\n| --- | --- |\n| data:cash | Обʼєкт, опис окремо |\n| data:check_type | 1-продаж,2-повернення,3-сервісне внесення,4-сервісне винесення,14-видача готівки,15-переказ коштів,16-видача готівки при переказі |\n| data:items | Обʼєкт, опис окремо |\n| data:close | Обʼєкт, опис окремо |\n| data:pays | Обʼєкт, опис окремо |\n| data:taxes | Обʼєкт, опис окремо |\n| data:markups | Сума націнки |\n| data:top_comment | Верхній коментар чеку. Список з рядків, розділених по довжині в N символів |\n| data:last_comment | Верхній коментар чеку. Структура як у верхнього коментаря. |\n| data:date | Дата з чеку |\n| data:mac | Контрольне число чеку |\n| data:rounding | Сума заокруглення |\n| data:service_move_data | Обʼєкт, опис окремо |\n\n## Об'єкт data:cash - в чеці видачі готівки\n\n| **Tag** | **Description** |\n| --- | --- |\n| cash_sum | Сума готівки |\n| commission | Сума комісії |\n| bank_id | Ідентифікатор єквайера торговця |\n| term_id | Ідентифікатор платіжного пристрою |\n| cardmask | Реквізити ЕПЗ |\n| auth_code | Код авторизації |\n| paysys | Назва платіжної системи |\n| rrn | Ідентифікатор транзакції |\n\n## Об'єкт data:items\n\n| **Tag** | **Description** |\n| --- | --- |\n| name | Назва товару, послуги, або операції |\n| tg_pring | Позначення податку, яким обкладається товар |\n| sum | Сума операції |\n| cnt | Кількість |\n| price | Ціна товару |\n| code | Код товару в обліковій системі підприємства |\n| code1 | Штрихкод |\n| code2 | Код товарної підкатегорії згідно з УКТЗЕД |\n| comment | Список рядків коментарів |\n| excise_codes | Список з акцизних кодів |\n| markup | Обʼєкт, націнка |\n| discount | Обʼєкт, знижка |\n\n## Об'єкт data:items::markup/discount\n\n| **Tag** | **Description** |\n| --- | --- |\n| sum | Сума операції |\n| tg_print | Позначення податку |\n\n## Об'єкт data:close\n\n| **Tag** | **Description** |\n| --- | --- |\n| sum | Сума чеку |\n| to_pay | Сума до оплати |\n\n## Об'єкт data:pays\n\n| **Tag** | **Description** |\n| --- | --- |\n| name | Тип |\n| pay_sum | Сума оплати |\n| change | Решта |\n| sum | Сума з урухуванням решти |\n| comment | Коментар |\n| bank_id | Ідентифікатор єквайера торговця |\n| term_id | Ідентифікатор платіжного пристрою |\n| operation | Тип операції(платіж/повернення/переказ тощо) |\n| cardmask | Реквізити ЕПЗ |\n| auth_code | Код авторизації |\n| commission | Сума комісії |\n| paysys | Назва платіжної системи |\n| rrn | Ідентифікатор транзакції |\n\n## Об'єкт data:taxes\n\n| **Tag** | **Description** |\n| --- | --- |\n| tax_caption | позначення податку |\n| tax_percent | відсоток податку |\n| tax_sum | сума податку |\n| dt_caption | назва додаткового збору (акциз/в.збір) |\n| dt_percent | відсоток додаткового збору |\n| dt_sum | сума додаткового збору |\n\n## Об'єкт data:service_move_data\n\n| **Tag** | **Description** |\n| --- | --- |\n| tag | I-внесення, O-видача |\n| name | назва оплати |"
+          },
+          "response": [
+            {
+              "name": "Отримати JSON чеку",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "KywCMB1uNYbRFpYbpnrhb5h6XWrU_D3LtZ2NH7UgU1Hv77gfQpq2IoDbCZPjPdkQ"
+                  }
+                ],
+                "url": {
+                  "raw": "https://localhost:5050/c/TEST_KkcD6uzuYeq08g.json",
+                  "protocol": "https",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "5050",
+                  "path": [
+                    "c",
+                    "TEST_KkcD6uzuYeq08g.json"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:15:34 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Transfer-Encoding",
+                  "value": "chunked"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                },
+                {
+                  "key": "Strict-Transport-Security",
+                  "value": "max-age=31536000; includeSubDomains"
+                },
+                {
+                  "key": "Content-Encoding",
+                  "value": "gzip"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"fiscal_number\": \"TEST_KkcD6uzuYeq08g\",\n    \"company_name\": \"Приватне підприємство \\\"Тестер\\\"\",\n    \"notification_company_name\": \"Приватне підприємство \\\"Тестер\\\"\",\n    \"company_edrpou\": \"55555555\",\n    \"company_tax_number\": \"\",\n    \"shop_name\": \"Тестова торгова точка\",\n    \"shop_type\": \"Тип Торгової Точки\",\n    \"shop_address\": \"Україна, м.Київ, вул. Хрещатик, 999\",\n    \"rro_fiscal_number\": \"99997655555555\",\n    \"is_offline\": false,\n    \"is_test\": true,\n    \"date_created\": \"2024-01-31T10:05:55.798668+02:00\",\n    \"check_flow\": 0,\n    \"check_url\": \"https://kasa.vchasno.ua/c/TEST_KkcD6uzuYeq08g\",\n    \"qr_content\": \"https://kasa.vchasno.ua/c/TEST_KkcD6uzuYeq08g?id=TEST_KkcD6uzuYeq08g&date=20240131&time=10:05:55&fn=99997655555555&sm=200.00&mac=160cf7bebc397274f765d73d6174b3dfc8b299786070227a31f0483a80c7d9b6\",\n    \"target_url\": \"https://kasa.vchasno.ua/c/TEST_KkcD6uzuYeq08g?id=TEST_KkcD6uzuYeq08g&date=20240131&time=10:05:55&fn=99997655555555&sm=200.00&mac=160cf7bebc397274f765d73d6174b3dfc8b299786070227a31f0483a80c7d9b6\",\n    \"data\": {\n        \"cash\": null,\n        \"check_type\": \"0\",\n        \"items\": [\n            {\n                \"name\": \"Продукт 1\",\n                \"tg_print\": \"В\",\n                \"sum\": \"110.00\",\n                \"cnt\": \"2.000\",\n                \"price\": \"55.00\",\n                \"code\": \"00001\",\n                \"code1\": \"73463253\",\n                \"code2\": \"54321\",\n                \"comment\": [\n                    \"Зразок! Коментар\"\n                ],\n                \"excise_codes\": [\n                    \"XX11111111111\",\n                    \"XX11111111112\"\n                ],\n                \"discount\": {\n                    \"sum\": \"10.00\",\n                    \"tg_print\": \"В\"\n                },\n                \"markup\": null\n            },\n            {\n                \"name\": \"Продукт 2\",\n                \"tg_print\": \"ГД\",\n                \"sum\": \"89.99\",\n                \"cnt\": \"1.000\",\n                \"price\": \"89.99\",\n                \"code\": \"00002\",\n                \"code1\": \"73463254\",\n                \"code2\": \"45667\",\n                \"comment\": [\n                    \"Зразок! \\\"Have a good day\\\"\"\n                ],\n                \"excise_codes\": [\n                    \"XX11111111113\"\n                ],\n                \"discount\": null,\n                \"markup\": {\n                    \"sum\": \"10.00\",\n                    \"tg_print\": \"ГД\"\n                }\n            }\n        ],\n        \"close\": {\n            \"sum\": \"199.99\",\n            \"to_pay\": \"200.00\"\n        },\n        \"pays\": [\n            {\n                \"name\": \"Готівка\",\n                \"pay_sum\": \"200.00\",\n                \"change\": \"50.00\",\n                \"sum\": \"150.00\",\n                \"comment\": [\n                    \"Зразок! Тест\"\n                ],\n                \"bank_id\": \"\",\n                \"term_id\": \"\",\n                \"operation\": \"Оплата\",\n                \"oper_type\": \"Оплата\",\n                \"cardmask\": \"\",\n                \"auth_code\": \"\",\n                \"commission\": \"0.00\",\n                \"paysys\": \"\",\n                \"rrn\": \"\",\n                \"show_additional_info\": true\n            },\n            {\n                \"name\": \"Картка\",\n                \"pay_sum\": \"50.00\",\n                \"change\": \"0.00\",\n                \"sum\": \"50.00\",\n                \"comment\": [\n                    \"Зразок! СЛАВА*УКРАЇНІ\"\n                ],\n                \"bank_id\": \"bank_id\",\n                \"term_id\": \"term_id\",\n                \"operation\": \"Оплата\",\n                \"oper_type\": \"Оплата\",\n                \"cardmask\": \"cardmask****test\",\n                \"auth_code\": \"auth_code\",\n                \"commission\": \"1.00\",\n                \"paysys\": \"paysys_test\",\n                \"rrn\": \"rrn_test\",\n                \"show_additional_info\": true\n            }\n        ],\n        \"taxes\": [\n            {\n                \"tax_caption\": \"ПДВ_Г\",\n                \"tax_percent\": \"20\",\n                \"tax_sum\": \"15.87\",\n                \"dt_caption\": \"Акцизний податок 5% Д\",\n                \"dt_percent\": \"0.05\",\n                \"dt_sum\": \"4.76\"\n            },\n            {\n                \"tax_caption\": \"ПДВ_В\",\n                \"tax_percent\": \"7\",\n                \"tax_sum\": \"6.54\",\n                \"dt_caption\": \"\",\n                \"dt_percent\": \"0.00\",\n                \"dt_sum\": \"0.00\"\n            }\n        ],\n        \"markups\": \"10.00\",\n        \"top_comment\": [\n            \"Зразок! Коментар шапки чеку\"\n        ],\n        \"last_comment\": [\n            \"Зразок! ДЯКУЄМО за покупку\"\n        ],\n        \"date\": \"2024-01-31T10:05:55+02:00\",\n        \"mac\": \"b7c9d8cc246acaaace9d2ce1b2c375173a9262d87a34067d56a89351bd23087a\",\n        \"rounding\": \"0.01\",\n        \"service_move_data\": null\n    }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Отримати зміни по касі",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/shifts",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "shifts"
+              ]
+            },
+            "description": "Запит на отримання змін по касі, ідентифікатором каси служить токен каси.\n\nЗа замовчуванням повертає відсортований по date_closed список об'єктів з лімітом 100\n\nДодаткові параметри: пагінація **page=n&limit=n** (значення n не може бути менше 1)\n\n## Опис відповіді об'єкту items\n\n| **Tag** | **Description** |\n| --- | --- |\n| id | Ідентифікатор зміни |\n| date_started | Дата і час початку зміни |\n| date_closed | Дата і час кінця зміни |\n| cash_started | Залишок готівки на початку зміни |\n| cash_current | Поточний залишок готівки |\n| cash_closed | Залишок готівки при закритті зміни |"
+          },
+          "response": [
+            {
+              "name": "Надіслати посилання чеку на email\\sms\\viber Copy",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/shifts",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "shifts"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "1202"
+                },
+                {
+                  "key": "Date",
+                  "value": "Fri, 09 Feb 2024 14:07:31 GMT"
+                },
+                {
+                  "key": "Server",
+                  "value": "Python/3.11 aiohttp/3.8.6"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"page_num\": 1,\n    \"page_size\": 100,\n    \"has_prev\": false,\n    \"has_next\": false,\n    \"items\": [\n        {\n            \"id\": \"0f878d90-1d33-94b3-52e1-4a1b522eb12b\",\n            \"date_started\": \"2024-02-09T15:56:43+02:00\",\n            \"date_closed\": \"2024-02-09T15:57:14+02:00\",\n            \"cash_started\": 10000,\n            \"cash_current\": 127700,\n            \"cash_closed\": 127700\n        },\n        {\n            \"id\": \"0f878d16-8a14-c0ad-6253-877ea8ae2284\",\n            \"date_started\": \"2024-02-09T15:43:26+02:00\",\n            \"date_closed\": \"2024-02-09T15:43:37+02:00\",\n            \"cash_started\": 10000,\n            \"cash_current\": 10000,\n            \"cash_closed\": 10000\n        },\n        {\n            \"id\": \"0f878d15-4021-dbd9-ffab-18106fc956a3\",\n            \"date_started\": \"2024-02-09T15:43:18+02:00\",\n            \"date_closed\": \"2024-02-09T15:43:24+02:00\",\n            \"cash_started\": 0,\n            \"cash_current\": 10000,\n            \"cash_closed\": 10000\n        },\n        {\n            \"id\": \"0f878d13-6da2-20d2-c80e-09370affc89d\",\n            \"date_started\": \"2024-02-09T15:43:06+02:00\",\n            \"date_closed\": \"2024-02-09T15:43:11+02:00\",\n            \"cash_started\": 0,\n            \"cash_current\": 0,\n            \"cash_closed\": 0\n        },\n        {\n            \"id\": \"0f878d0c-c08d-ec1b-a545-27ab6635dd38\",\n            \"date_started\": \"2024-02-09T15:42:22+02:00\",\n            \"date_closed\": \"2024-02-09T15:42:51+02:00\",\n            \"cash_started\": 0,\n            \"cash_current\": 11100,\n            \"cash_closed\": 11100\n        },\n        {\n            \"id\": \"0f878cfe-5653-aa76-d4f4-5f368f6b1391\",\n            \"date_started\": \"2024-02-09T15:40:47+02:00\",\n            \"date_closed\": \"2024-02-09T15:42:12+02:00\",\n            \"cash_started\": 0,\n            \"cash_current\": 0,\n            \"cash_closed\": 0\n        }\n    ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Отримати чеки по зміні",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/shift/checks?shift_id=<shift_id>",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "shift",
+                "checks"
+              ],
+              "query": [
+                {
+                  "key": "shift_id",
+                  "value": "<shift_id>"
+                }
+              ]
+            },
+            "description": "Запит на отримання чеків по зміні, **shift_id - ідентифікатор зміни**\n\nЗа замовчуванням повертає відсортований по date_created список об'єктів з лімітом 100\n\nДодаткові параметри: пагінація **page=n&limit=n** (значення n не може бути менше 1)\n\n## Опис відповіді об'єкту items\n\n| **Tag** | **Description** |\n| --- | --- |\n| id | Ідентифікатор чеку |\n| shift_id | Ідентифікатор зміни |\n| local_number | Локальний номер чеку відносно зміни |\n| fiscal_number | Фіскальний номер чеку |\n| type | Тип чеку:  <br>**chk** - чек  <br>**z_report** - З-звіт  <br>**service** - сервісний чек |\n| status | Підтвердження фіскалізації чеку:  <br>**0 - Unknown, не визначений;  <br>1 - OK, чек фіскалізовано, надано номер;  <br>\\-1 - ERROR_VEREFY, помилка перевірки підпису;  <br>\\-2 - ERROR_CHECK, помилка перевірки РРО;  <br>\\-3 - ERROR_SAVE, помилка запису;  <br>\\-4 - ERROR_UNKNOWN, загальна помилка;  <br>\\-5 - ERROR_TYPE, помилка типу посилки;  <br>\\-6 - ERROR_NOT_PREV_ZREPORT, нема Z-звіту за попередній день;  <br>\\-7 - ERROR_XML, невірний формат XML ( структура , фіскальний номер);  <br>\\-8 - ERROR_XML_DATE, невірний формат XML дата не відповідає Check.date;  <br>\\-9 - ERROR_XML_CHK, невірний формат XML чеку;  <br>\\-10 - ERROR_XML_ZREPORT, невірний формат Z-звіту;  <br>\\-11 - ERROR_OFFLINE_168, РРО заблокований, перевищено ліміт 168 годин офлайну;  <br>\\-12 - ERROR_BAD_HASH_PREV, невірний хеш попереднього чеку;  <br>\\-13 - ERROR_NOT_REGISTERED_RRO, не зареєстровано ПРРО;  <br>\\-14 - ERROR_NOT_REGISTERED_SIGNER, не зареєстрований підписант;**  <br>**\\-15 - ERROR_NOT_OPEN_SHIFT, не відкрита зміна;  <br>\\-16 - ERROR_OFFLINE_ID, невірний оффлайн ID** |\n| source | Ідентифікація джерела видачі чеку:**  <br>1 - device_manager,  <br>2 - кабінет без офлайну або аварійне закриття,  <br>3 - веб API,  <br>4 - автозгенерований кабінетом,  <br>5 - мобільний додаток,  <br>6 - вебкабінет з офлайном** |\n| date_created | Дата створення |\n| data_id | Загальний номер чеку відносно каси |\n| check_hash | Хеш чеку, генерація SHA256 від xml чеку |\n| flow | Який чек створено:  <br>**0 - Чек продажу  <br>1 - Чек повернення  <br>2 - Службовий чек внесення коштів  <br>4 - Переказ коштів  <br>7 - Чек видачі коштів при переказі  <br>8 - Відкриття зміни  <br>9 - Чек переходу в офлайн  <br>10 - Чек виходу з офлайн  <br>12 - Запит фіскальних номерів  <br>14 - Видача готівки** |\n| safe_cash | Залишок готівки у касі |\n| tag | Мітка завдання для ідентифікації |\n| is_offline | Чи видано чек в офлайні |"
+          },
+          "response": [
+            {
+              "name": "Отримати всі чеки зі зміни",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "http://{{host}}/api/v3/shift/checks?shift_id=0f878d90-1d33-94b3-52e1-4a1b522eb12b",
+                  "protocol": "http",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "shift",
+                    "checks"
+                  ],
+                  "query": [
+                    {
+                      "key": "shift_id",
+                      "value": "0f878d90-1d33-94b3-52e1-4a1b522eb12b"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "2535"
+                },
+                {
+                  "key": "Date",
+                  "value": "Fri, 09 Feb 2024 14:40:21 GMT"
+                },
+                {
+                  "key": "Server",
+                  "value": "Python/3.11 aiohttp/3.8.6"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"page_num\": 1,\n    \"page_size\": 100,\n    \"has_prev\": false,\n    \"has_next\": false,\n    \"items\": [\n        {\n            \"id\": \"0f878d94-cbb2-79a3-be3b-3afebe38aa12\",\n            \"shift_id\": \"0f878d90-1d33-94b3-52e1-4a1b522eb12b\",\n            \"local_number\": 6,\n            \"fiscal_number\": \"TEST_BwA32_ONSQuY-g\",\n            \"type\": \"z_report\",\n            \"status\": 1,\n            \"source\": 6,\n            \"date_created\": \"2024-02-09T15:57:14.052979+02:00\",\n            \"data_id\": 19,\n            \"check_hash\": \"40a965329822e629305acc6d45092f785e581fe080b44a03a2e56c0aa921612f\",\n            \"flow\": null,\n            \"safe_cash\": 127700,\n            \"tag\": \"78a513d91ed485c4d40c1494ce305a91\",\n            \"is_offline\": false\n        },\n        {\n            \"id\": \"0f878d93-8ac6-bae7-f2b8-5a6b45a339ca\",\n            \"shift_id\": \"0f878d90-1d33-94b3-52e1-4a1b522eb12b\",\n            \"local_number\": 2,\n            \"fiscal_number\": \"TEST_p72E1ZvyYG7nWg\",\n            \"type\": \"chk\",\n            \"status\": 1,\n            \"source\": 6,\n            \"date_created\": \"2024-02-09T15:57:05.837365+02:00\",\n            \"data_id\": 18,\n            \"check_hash\": \"171c1fde6dd0e1c18fdeac1bc7853cf728bfb00fc06b15bad1d02d2902d912db\",\n            \"flow\": 2,\n            \"safe_cash\": null,\n            \"tag\": \"8x2pdUWGzZAWrj6ECCiMm\",\n            \"is_offline\": false\n        },\n        {\n            \"id\": \"0f878d92-a070-d84a-4e38-70fc8e56bbbd\",\n            \"shift_id\": \"0f878d90-1d33-94b3-52e1-4a1b522eb12b\",\n            \"local_number\": 1,\n            \"fiscal_number\": \"TEST_6dBu2HbHwwXlkg\",\n            \"type\": \"chk\",\n            \"status\": 1,\n            \"source\": 6,\n            \"date_created\": \"2024-02-09T15:56:59.838403+02:00\",\n            \"data_id\": 17,\n            \"check_hash\": \"2e71d9890a2f42732d276e42ff6f0f655245d08da88ba7f91177722f3b8dad0b\",\n            \"flow\": 2,\n            \"safe_cash\": null,\n            \"tag\": \"OOFDZ1RQW2P9wPYE3WuTa\",\n            \"is_offline\": false\n        },\n        {\n            \"id\": \"0f878d91-94c8-71d1-2718-1fc6c2891dd0\",\n            \"shift_id\": \"0f878d90-1d33-94b3-52e1-4a1b522eb12b\",\n            \"local_number\": 2,\n            \"fiscal_number\": \"TEST_3cN5dDgeeOOo4A\",\n            \"type\": \"chk\",\n            \"status\": 1,\n            \"source\": 6,\n            \"date_created\": \"2024-02-09T15:56:52.986339+02:00\",\n            \"data_id\": 16,\n            \"check_hash\": \"da41659c4044d14d89b7634a553c6c16981de58ab31189d5b76fd23fe6fa778c\",\n            \"flow\": 0,\n            \"safe_cash\": null,\n            \"tag\": \"y5aLwUMX5OTenyBV0jM0w\",\n            \"is_offline\": false\n        },\n        {\n            \"id\": \"0f878d90-d072-605a-975f-5ef986d6e9b5\",\n            \"shift_id\": \"0f878d90-1d33-94b3-52e1-4a1b522eb12b\",\n            \"local_number\": 1,\n            \"fiscal_number\": \"TEST_EixB0aXSylhhJw\",\n            \"type\": \"chk\",\n            \"status\": 1,\n            \"source\": 6,\n            \"date_created\": \"2024-02-09T15:56:47.960189+02:00\",\n            \"data_id\": 15,\n            \"check_hash\": \"f13025fe880c2c9c111540df49d8a8c074d13104d2630a593aaf9d437084fc18\",\n            \"flow\": 0,\n            \"safe_cash\": null,\n            \"tag\": \"wX764EHfcV83mAcbuIVEr\",\n            \"is_offline\": false\n        },\n        {\n            \"id\": \"0f878d90-1d41-cef0-4f84-667b4f889154\",\n            \"shift_id\": \"0f878d90-1d33-94b3-52e1-4a1b522eb12b\",\n            \"local_number\": 0,\n            \"fiscal_number\": \"TEST_nUgNU8xboXD9Jw\",\n            \"type\": \"service\",\n            \"status\": 1,\n            \"source\": 6,\n            \"date_created\": \"2024-02-09T15:56:43.371487+02:00\",\n            \"data_id\": 14,\n            \"check_hash\": \"67e9dd0df87c1353043fed0b679817ba0579493f4aa559d399c5b538a45ec0e1\",\n            \"flow\": 8,\n            \"safe_cash\": 10000,\n            \"tag\": \"3627c284440d2b67a22ea580a75537bb\",\n            \"is_offline\": false\n        }\n    ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Надіслати посилання чеку на email\\sms\\viber",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token_vchasno}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"recipient\": \"test@vchasno.ua\",\n    \"channel\": \"email\",\n    \"check\": \"TEST_oTzS71QVfYGwTw\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://{{host}}/api/v3/notifications/checks",
+              "protocol": "https",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "api",
+                "v3",
+                "notifications",
+                "checks"
+              ]
+            },
+            "description": "Запит для надсилання посилання на чек користувачу через email, sms чи viber.\n\n## Структура запиту\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| recipient | string | email або номер телефону отримувача |\n| channel | string | Канал відправки:  <br>\\- email  <br>\\- sms  <br>\\- viber  <br>\\- cascade (спробує надіслати через viber, якщо користувач не зареєстрований у viber - відправить sms) |\n| check | string | Фіскальний номер чеку |\n\n## Опис відповіді\n\n| **Tag** | **Type** | **Description** |\n| --- | --- | --- |\n| recipient | string | email або номер телефону отримувача |\n| channel | string | Канал відправки:  <br>\\- email  <br>\\- sms  <br>\\- viber  <br>\\- cascade (спробує надіслати через viber, якщо користувач не зареєстрований у viber - відправить sms) |\n| check_id | string | ID надісланого чеку |\n\n### Приклади відправлених повідомлень\n\n**Текст sms:**\n  \nChek vid {COMPANY_NAME} za {CHECK_DATE}\n[https://kasa.vchasno.ua/c/](https://kasa.vchasno.ua/c/){CHECK_FN}\n\n**Текст viber:**\n\nВи отримали фіскальний чек від {COMPANY_NAME} [https://kasa.vchasno.ua/c/](https://kasa.vchasno.ua/c/)"
+          },
+          "response": [
+            {
+              "name": "Надіслати посилання чеку на email\\sms\\viber",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "{{token_vchasno}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"recipient\": \"test@vchasno.ua\",\n    \"channel\": \"email\",\n    \"check\": \"TEST_oTzS71QVfYGwTw\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://{{host}}/api/v3/notifications/checks",
+                  "protocol": "https",
+                  "host": [
+                    "{{host}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v3",
+                    "notifications",
+                    "checks"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Server",
+                  "value": "nginx"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 31 Jan 2024 08:17:20 GMT"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "99"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                },
+                {
+                  "key": "Strict-Transport-Security",
+                  "value": "max-age=31536000; includeSubDomains"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"recipient\": \"test@vchasno.ua\",\n    \"channel\": \"email\",\n    \"check_id\": \"0f85b1ee-75fa-ea9f-b3dd-b4c0e88a5d64\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Робота з помилками",
+      "item": [],
+      "description": "У відповіді крім помилки повертається поле “res_action”, у якому система рекомендує наступні дії дотримання транзакційної цілісності. В першу чергу, слід звертати увагу на значення цього поля і в разі отримання значення 3 - дивитися додаткові поля з кодами/текстом помилок.  \n**(Повторні запити слід надсилати з параметром “tag” рівним початковому запиту/відповіді)**\n\n- 0 - ОК, переходити до наступного запиту\n    \n- 1 - Помилка, запит не пройшов  \n    Запит не виконано через “випадкові помилки” від податкової (ДФС). Рекомендується повторити запит, який не пройшов, але можна зробити й інший запит.\n    \n- 2 - Помилка + колізія  \n    Запит було надіслано до ДФС, але відповіді не було отримано. За будь-якого наступного звернення система спочатку намагатиметься виправити колізію. Тому настійно рекомендується робити повторення вихідного запиту до тих пір, поки колізію не буде вирішено.\n    \n- 3 - Помилка, що вимагає зупинки та ручного втручання  \n    Виникла помилка, яка не виправиться шляхом повтору запиту. Необхідно виправляти помилку через інтерфейс сервісу Вчасно.Каса або техпідтримку.\n    \n\n## Опис кодів помилок\n\nУ відповіді на запит приходять поля “res” та “errortxt”.\n\n- Поле “errortxt” містить текст помилки та може містити технічну інформацію, призначене більше для логування та подальших досліджень причин.\n    \n- Поле “res” - це код відповіді, що дорівнює 0 у разі успішного виконання запиту. У разі помилки поле містить код помилки.\n    \n- Об'єкт \"error_extra: object | null\" - опційний обʼєкт, в якому повертаються деталі щодо помилки. Наприклад перелік полів, та причини, чому вони не пройшли валідацію.\n    \n\nНижче наведено список усіх кодів можливих помилок.\n\n| **Код** | **Опис** |\n| --- | --- |\n| 401 | Запит з невірними авторизаційними даними |\n| 5хх | Непередбачена помилка на стороні сервісу |\n| 1001 | Помилка валідації вхідних даних |\n| 1006 | Внутрішня помилка сервісу Вчасно.Каса |\n| 1011 | Об'єкт не знайдено в базі (може стосуватись користувача/компанії/каси) |\n| 1013 | Для вхідних даних не реалізовано функціонал (Not Implemented Error) |\n| 1015 | Каса зайнята попереднім запитом (Lock Error) |\n| 1016 | Перевищено таймаут на обробку запиту |\n| 1017 | Дію заборонено (Action not allowed error) |\n| 2000 | Базова помилка. Може бути пов'язана з різними причинами (дивитися значення поля “errortxt”) |\n| 2001 | Помилка зв'язку з ДФС |\n| 2002 | Запит у ДФС перевищив допустимий тайм-аут |\n| 2003 | Отримано код відповіді від ДФС, який вважається \"випадковою помилкою\" |\n| 2004 | Отримано код критичної помилки під час роботи з ДФС, запит не може бути виконаний (точніший опис причини дивитись у полі “errortxt”) |\n| 2005 | Каса (пРРО) у стані колізії |\n| 2006 | Помилка під час перевірки хешу чеку |\n| 2007 | Необхідно відкрити зміну |\n| 2008 | Необхідно закрити зміну |\n| 2009 | пРРО заблоковано |\n| 2010 | Помилка при спробі змінити режим роботи каси |"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "host",
+      "value": "kasa.vchasno.ua",
+      "type": "string"
+    },
+    {
+      "key": "token_vchasno",
+      "value": "<token>",
+      "type": "string"
+    }
+  ]
+}

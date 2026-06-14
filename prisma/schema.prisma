@@ -1,0 +1,343 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model Categories {
+  id                                                      Int             @id(map: "Categories_PK") @default(autoincrement())
+  category_name                                           String          @db.VarChar(25)
+  category_discount                                       Decimal?        @db.Decimal(10, 2)
+  category_image                                          String?         @db.VarChar(100)
+  cat_1C_id                                               Int             @unique(map: "Categories_UNIQUE")
+  category_priority                                       Int?            @unique(map: "Categories_UNIQUE_PRIORITY")
+  Products                                                Products[]
+  Store                                                   Store[]
+  Subcategories                                           Subcategories[]
+  Subcategories_Subcategories_category_ref_1CToCategories Subcategories[] @relation("Subcategories_category_ref_1CToCategories")
+}
+
+model ComboProducts {
+  main_product_id                                   Int
+  child_product_id                                  Int
+  combo_id                                          Int        @id(map: "ComboProducts_PK") @default(autoincrement())
+  isActive                                          Boolean?   @default(false, map: "DF__ComboProd__isAct__13DCE752")
+  Products_ComboProducts_main_product_idToProducts  Products   @relation("ComboProducts_main_product_idToProducts", fields: [main_product_id], references: [id], onUpdate: NoAction, map: "ComboProducts_Products_FK")
+  Products_ComboProducts_child_product_idToProducts Products   @relation("ComboProducts_child_product_idToProducts", fields: [child_product_id], references: [id], onUpdate: NoAction, map: "ComboProducts_Products_FK_1")
+  Products_Products_combo_idToComboProducts         Products[] @relation("Products_combo_idToComboProducts")
+}
+
+model Inventory {
+  product_id      Int      @unique(map: "Inventory_UNIQUE")
+  total_quantity  Decimal? @db.Decimal(10, 2)
+  product_sale_id Int?
+  Products        Products @relation(fields: [product_id], references: [id], onUpdate: NoAction, map: "Inventory_Products_FK")
+}
+
+model LoadProducts {
+  id                                          Int              @id(map: "LoadProducts_PK") @default(autoincrement())
+  product_id                                  Int?
+  load_date                                   DateTime?        @db.Date
+  load_quantity                               Decimal?         @db.Decimal(10, 2)
+  lotIsActive                                 Boolean?         @default(false, map: "DF__LoadProdu__lotIs__7F80E8EA")
+  products_left                               Float?
+  sale_id                                     Int?             @default(0, map: "DF__LoadProdu__sale___76818E95")
+  child_product_barcode                       String?          @db.VarChar(256)
+  load_date_time                              DateTime?
+  Products_LoadProducts_product_idToProducts  Products?        @relation("LoadProducts_product_idToProducts", fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "LoadProducts_Products_FK")
+  Sales                                       Sales?           @relation(fields: [sale_id], references: [sale_custom_id], onDelete: NoAction, onUpdate: NoAction, map: "LoadProducts_Sales_FK")
+  Products_Products_product_lotToLoadProducts Products[]       @relation("Products_product_lotToLoadProducts")
+  RemoveProducts                              RemoveProducts[]
+}
+
+model Products {
+  id                                                                  Int                 @id(map: "Products_PK") @default(autoincrement())
+  product_name                                                        String?             @db.NVarChar(256)
+  product_code                                                        String?             @unique(map: "Products_UNIQUE_prod_code") @db.VarChar(256)
+  barcode                                                             String?             @unique(map: "Products_UNIQUE") @db.VarChar(256)
+  measure                                                             String?             @db.NVarChar(256)
+  product_name_ru                                                     String?             @db.NVarChar(256)
+  product_name_ua                                                     String?             @db.NVarChar(256)
+  product_description                                                 String?             @db.NVarChar(256)
+  product_left                                                        Decimal?            @db.Decimal(10, 2)
+  product_image                                                       String?             @db.VarChar(255)
+  product_price                                                       Decimal?            @db.Decimal(10, 2)
+  product_discount                                                    Decimal?            @db.Decimal(10, 2)
+  product_rating                                                      Decimal?            @db.Decimal(10, 2)
+  product_lot                                                         Int?
+  exposition_term                                                     Int?
+  sale_id                                                             Int?
+  discount_price_1                                                    Decimal?            @db.Decimal(10, 2)
+  discount_price_2                                                    Decimal?            @db.Decimal(10, 2)
+  discount_price_3                                                    Decimal?            @db.Decimal(10, 2)
+  updatedAt                                                           DateTime?           @db.DateTime
+  combo_id                                                            Int?
+  product_category                                                    Int?
+  product_subcategory                                                 Int?
+  is_VAT_Excise                                                       Boolean?
+  excise_product                                                      Boolean?
+  taxgrp                                                              Int?
+  product_division                                                    Int?
+  is_new_product                                                      Boolean?            @default(false, map: "DF__Products__is_new__4DD47EBD")
+  additional_barcodes                                                 Int?
+  cat_subcat_id                                                       Int?
+  AdditionalBarcodes_AdditionalBarcodes_main_barcodeToProducts        AdditionalBarcodes? @relation("AdditionalBarcodes_main_barcodeToProducts")
+  ComboProducts_ComboProducts_main_product_idToProducts               ComboProducts[]     @relation("ComboProducts_main_product_idToProducts")
+  ComboProducts_ComboProducts_child_product_idToProducts              ComboProducts[]     @relation("ComboProducts_child_product_idToProducts")
+  Inventory                                                           Inventory?
+  LoadProducts_LoadProducts_product_idToProducts                      LoadProducts[]      @relation("LoadProducts_product_idToProducts")
+  AdditionalBarcodes_Products_additional_barcodesToAdditionalBarcodes AdditionalBarcodes? @relation("Products_additional_barcodesToAdditionalBarcodes", fields: [additional_barcodes], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "Products_AdditionalBarcodes_FK")
+  Subcategories_Products_cat_subcat_idToSubcategories                 Subcategories?      @relation("Products_cat_subcat_idToSubcategories", fields: [cat_subcat_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "Products_Cat_Subcat_FK")
+  Categories                                                          Categories?         @relation(fields: [product_category], references: [cat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Products_Categories_FK")
+  ComboProducts_Products_combo_idToComboProducts                      ComboProducts?      @relation("Products_combo_idToComboProducts", fields: [combo_id], references: [combo_id], onUpdate: NoAction, map: "Products_ComboProducts_FK")
+  LoadProducts_Products_product_lotToLoadProducts                     LoadProducts?       @relation("Products_product_lotToLoadProducts", fields: [product_lot], references: [id], onUpdate: NoAction, map: "Products_LoadProducts_FK")
+  ProductsDivisions                                                   ProductsDivisions?  @relation(fields: [product_division], references: [division_custom_id], onDelete: NoAction, onUpdate: NoAction, map: "Products_ProductsDivisions_FK")
+  Sales                                                               Sales?              @relation(fields: [sale_id], references: [sale_custom_id], onDelete: NoAction, onUpdate: NoAction, map: "Products_Sales_FK")
+  Subcategories                                                       Subcategories?      @relation(fields: [product_subcategory], references: [subcat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Products_Subcategories_FK")
+  RemoveProducts                                                      RemoveProducts[]
+  Transactions                                                        Transactions[]
+}
+
+model RemoveProducts {
+  id                              Int           @id(map: "RemoveProducts_PK") @default(autoincrement())
+  product_id                      Int?
+  remove_date                     DateTime?     @db.DateTime
+  remove_quantity                 Decimal?      @db.Decimal(10, 2)
+  remove_type_id                  Int?
+  remove_cost                     Decimal?      @db.Decimal(10, 2)
+  isActive                        Boolean?      @default(false, map: "DF__RemovePro__isAct__0E04126B")
+  load_id                         Int?
+  amount                          Decimal?      @db.Decimal(8, 2)
+  approvalCode                    String?       @db.VarChar(100)
+  bankAcquirer                    String?       @db.VarChar(100)
+  date                            String?       @db.NVarChar(64)
+  discount                        Decimal?      @db.Decimal(8, 2)
+  method                          String?       @db.VarChar(64)
+  pan                             String?       @db.VarChar(64)
+  paymentSystem                   String?       @db.VarChar(100)
+  responseCode                    String?       @db.VarChar(64)
+  rrn                             String?       @db.VarChar(100)
+  rrnExt                          String?       @db.VarChar(100)
+  subMerchant                     String?       @db.VarChar(100)
+  time                            String?       @db.NVarChar(64)
+  product_sale_id                 Int?
+  combo_child_product_barcode     String?       @db.VarChar(100)
+  combo_parent_product_barcode    String?       @db.VarChar(100)
+  fisc_fiscal_number              String?       @db.VarChar(100)
+  fisc_company_name               String?       @db.VarChar(255)
+  fisc_company_edrpou             String?       @db.VarChar(100)
+  fisc_rro_fiscal_number          String?       @db.VarChar(100)
+  fisc_iso_date_created           DateTime?     @db.DateTime
+  fisc_check_url                  String?       @db.VarChar(256)
+  fics_target_url                 String?       @db.VarChar(256)
+  fisc_check_tax_name             String?       @db.VarChar(100)
+  fisc_check_tax_print            String?       @db.VarChar(100)
+  fisc_check_tax_percent          Float?
+  fisch_check_tax_sum             Float?
+  fisc_tax_additional_tax_caption String?       @db.VarChar(100)
+  fisc_additional_tax_percent     Float?
+  fisc_additional_tax_sum         Float?
+  internal_store_check_id         String?       @db.VarChar(100)
+  LoadProducts                    LoadProducts? @relation(fields: [load_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "RemoveProducts_LoadProducts_FK")
+  Products                        Products?     @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "RemoveProducts_Products_FK")
+  RemoveTypes                     RemoveTypes?  @relation(fields: [remove_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "RemoveProducts_RemoveTypes_FK")
+}
+
+model RemoveTypes {
+  id             Int              @id(map: "RemoveTypes_PK") @default(autoincrement())
+  type_name      String?          @db.VarChar(20)
+  type_name_ua   String?          @db.VarChar(20)
+  RemoveProducts RemoveProducts[]
+}
+
+model Sales {
+  id               Int            @id(map: "Sales_PK") @default(autoincrement())
+  sale_name        String         @db.NVarChar(128)
+  sale_discount_1  Decimal?       @db.Decimal(2, 2)
+  sale_discount_2  Decimal?       @db.Decimal(2, 2)
+  sale_discount_3  Decimal?       @db.Decimal(2, 2)
+  sale_description String?        @db.NVarChar(256)
+  sale_custom_id   Int?           @unique(map: "Sales_UNIQUE")
+  LoadProducts     LoadProducts[]
+  Products         Products[]
+}
+
+model Store {
+  id                             Int            @id(map: "Store_PK") @default(autoincrement())
+  auth_id                        String         @unique(map: "Store_UNIQUE") @db.VarChar(50)
+  store_name                     String?        @db.VarChar(100)
+  password                       String?        @db.VarChar(200)
+  token                          String?        @db.VarChar(200)
+  role                           String?        @db.VarChar(100)
+  store_sale_name                String?        @db.NVarChar(100)
+  store_sale_title               String?        @db.NVarChar(100)
+  store_sale_discount            Decimal?       @db.Decimal(10, 2)
+  store_sale_product_category    Int?
+  store_sale_product_subcategory Int?
+  default_merchant               String?        @db.VarChar(100)
+  VAT_excise_merchant            String?        @db.VarChar(100)
+  use_VAT_by_default             Boolean?
+  is_single_merchant             Boolean?
+  default_merchant_taxgrp        Int?
+  VAT_merchant_taxgrp            Int?
+  VAT_excise_taxgrp              Int?
+  default_merchant_name          String?        @db.NVarChar(100)
+  VAT_merchant_name              String?        @db.NVarChar(100)
+  store_address                  String?        @db.NVarChar(100)
+  active_bank                    String?        @db.VarChar(20)
+  Categories                     Categories?    @relation(fields: [store_sale_product_category], references: [cat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Categories_FK")
+  Subcategories                  Subcategories? @relation(fields: [store_sale_product_subcategory], references: [subcat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Subcategories_FK")
+}
+
+model Subcategories {
+  id                                                   Int        @id(map: "Subcategories_PK") @default(autoincrement())
+  subcategory_name                                     String?    @db.VarChar(100)
+  category_ref                                         Int
+  subcategory_discount                                 Decimal?   @db.Decimal(10, 2)
+  subcat_1C_id                                         Int?       @unique(map: "Subcategories_UNIQUE")
+  category_ref_1C                                      Int
+  Products_Products_cat_subcat_idToSubcategories       Products[] @relation("Products_cat_subcat_idToSubcategories")
+  Products                                             Products[]
+  Store                                                Store[]
+  Categories                                           Categories @relation(fields: [category_ref], references: [id], onUpdate: NoAction, map: "Subcategories_Categories_FK")
+  Categories_Subcategories_category_ref_1CToCategories Categories @relation("Subcategories_category_ref_1CToCategories", fields: [category_ref_1C], references: [cat_1C_id], onUpdate: NoAction, map: "Subcategories_Categories_FK_by_1C")
+}
+
+model Transactions {
+  id              Int       @id(map: "Transactions_PK") @default(autoincrement())
+  upload_date     DateTime? @db.Date
+  product_id      Int?
+  upload_quantity Decimal?  @db.Decimal(10, 2)
+  left_quantity   Decimal?  @db.Decimal(10, 2)
+  isActiveLot     Boolean?  @default(false, map: "DF__Transacti__isAct__4EA8A765")
+  Products        Products? @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "Transactions_Products_FK")
+}
+
+model ProductsDivisions {
+  div_id             Int        @id(map: "ProductsDivisions_PK") @default(autoincrement())
+  division_custom_id Int        @unique(map: "ProductsDivisions_UNIQUE")
+  division_name      String?    @db.NVarChar(256)
+  Products           Products[]
+}
+
+model AdditionalBarcodes {
+  main_barcode                                              String     @unique(map: "AdditionalBarcodes_UNIQUE") @db.VarChar(256)
+  additional_barcode_1                                      String?    @db.VarChar(256)
+  additional_barcode_2                                      String?    @db.VarChar(256)
+  additional_barcode_3                                      String?    @db.VarChar(256)
+  additional_barcode_4                                      String?    @db.VarChar(256)
+  additional_barcode_5                                      String?    @db.VarChar(256)
+  id                                                        Int        @id(map: "PK__Addition__3213E83F4DCF795F") @default(autoincrement())
+  Products_AdditionalBarcodes_main_barcodeToProducts        Products   @relation("AdditionalBarcodes_main_barcodeToProducts", fields: [main_barcode], references: [barcode], onUpdate: NoAction, map: "AdditionalBarcodes_Products_FK")
+  Products_Products_additional_barcodesToAdditionalBarcodes Products[] @relation("Products_additional_barcodesToAdditionalBarcodes")
+}
+
+model TerminalOperations {
+  id                  Int       @id(map: "TerminalOperations_PK") @default(autoincrement())
+  operation_type      String?   @db.VarChar(100)
+  operation_date_time DateTime?
+  amount              Int?
+  merchant            String?   @db.VarChar(100)
+  taxgrp              Int?
+  transaction_id      String?   @db.VarChar(100)
+  rrn                 String?   @db.VarChar(50)
+  response_code       String?   @db.VarChar(100)
+  error_message       String?   @db.VarChar(255)
+  currency            String?   @db.VarChar(20)
+  card_pan            String?   @db.VarChar(25)
+  additional_data     String?   @db.NVarChar(Max)
+  created_at          DateTime? @db.DateTime
+  updated_at          DateTime? @db.DateTime
+}
+
+model ProductUpdateQueue {
+  id                  Int       @id(map: "ProductUpdateQueue_PK") @default(autoincrement())
+  barcode             String    @db.VarChar(256)
+  cat_subcat_id       Int
+  product_name        String?   @db.VarChar(256)
+  product_code        String?   @db.VarChar(256)
+  measure             String?   @db.VarChar(64)
+  product_name_ru     String?   @db.VarChar(256)
+  product_name_ua     String?   @db.VarChar(256)
+  product_description String?   @db.VarChar(256)
+  product_image       String?   @db.VarChar(255)
+  product_price       Decimal?  @db.Decimal(10, 2)
+  product_discount    Decimal?  @db.Decimal(10, 2)
+  exposition_term     Int?
+  discount_price_1    Decimal?  @db.Decimal(10, 2)
+  discount_price_2    Decimal?  @db.Decimal(10, 2)
+  discount_price_3    Decimal?  @db.Decimal(10, 2)
+  is_VAT_Excise       Boolean?
+  excise_product      Boolean?
+  product_left        Decimal?  @db.Decimal(10, 2)
+  is_new_product      Boolean?
+  product_category    Int?
+  product_subcategory Int?
+  product_division    Int?
+  sale_id             Int?
+  action              String    @default("add", map: "DF__ProdUpdQu__action") @db.VarChar(20)
+  status              String    @default("pending", map: "DF__ProdUpdQu__status") @db.VarChar(20)
+  created_at          DateTime  @default(now(), map: "DF__ProdUpdQu__create") @db.DateTime
+  processed_at        DateTime? @db.DateTime
+}
+
+model SubcategoryMoveQueue {
+  id             Int       @id(map: "SubcatMoveQueue_PK") @default(autoincrement())
+  cat_1C_id      Int
+  subcat_1C_id   Int
+  new_cat_1C_id  Int
+  subcat_name    String?   @db.VarChar(100)
+  status         String    @default("pending", map: "DF__SubcatMvQ__status") @db.VarChar(20)
+  created_at     DateTime  @default(now(), map: "DF__SubcatMvQ__create") @db.DateTime
+  processed_at   DateTime? @db.DateTime
+}
+
+model StoreSaleQueue {
+  id                             Int       @id(map: "StoreSaleQueue_PK") @default(autoincrement())
+  store_auth_id                  String    @db.VarChar(50)
+  store_sale_name                String    @db.NVarChar(100)
+  store_sale_title               String    @db.NVarChar(100)
+  store_sale_discount            Decimal   @db.Decimal(10, 2)
+  store_sale_product_category    Int
+  store_sale_product_subcategory Int
+  status                         String    @default("pending", map: "DF__StoreSaleQ__status") @db.VarChar(20)
+  created_at                     DateTime  @default(now(), map: "DF__StoreSaleQ__create") @db.DateTime
+  processed_at                   DateTime? @db.DateTime
+}
+
+model CategoryTaskQueue {
+  id                   Int       @id(map: "CategoryTaskQueue_PK") @default(autoincrement())
+  action               String    @db.VarChar(30)
+  status               String    @default("pending", map: "DF__CatTaskQ__status") @db.VarChar(20)
+  cat_1C_id            Int
+  category_name        String?   @db.NVarChar(25)
+  category_discount    Decimal?  @db.Decimal(10, 2)
+  category_image       String?   @db.VarChar(100)
+  category_priority    Int?
+  subcat_1C_id         Int?
+  subcategory_name     String?   @db.NVarChar(100)
+  subcategory_discount Decimal?  @db.Decimal(10, 2)
+  new_subcat_1C_id     Int?
+  new_cat_1C_id        Int?
+  created_at           DateTime  @default(now(), map: "DF__CatTaskQ__create") @db.DateTime
+  processed_at         DateTime? @db.DateTime
+}
+
+model FiscalQueue {
+  id                 Int       @id(map: "FiscalQueue_PK") @default(autoincrement())
+  payload            String    @db.NVarChar(Max)
+  with_vat           Boolean   @default(false, map: "DF__FiscalQue__with___VAT")
+  status             String    @default("pending", map: "DF__FiscalQue__status") @db.VarChar(20)
+  attempts           Int       @default(0, map: "DF__FiscalQue__attemp")
+  max_attempts       Int       @default(10, map: "DF__FiscalQue__max_at")
+  last_error         String?   @db.NVarChar(500)
+  fiscal_response    String?   @db.NVarChar(Max)
+  remove_product_ids String?   @db.NVarChar(500)
+  created_at         DateTime  @default(now(), map: "DF__FiscalQue__create") @db.DateTime
+  next_retry_at      DateTime  @default(now(), map: "DF__FiscalQue__next_r") @db.DateTime
+  processed_at       DateTime? @db.DateTime
+}
