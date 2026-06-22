@@ -2,9 +2,10 @@
 
 ## Зміст
 1. [Налаштування Windows (перший запуск)](#налаштування-windows)
-2. [API Endpoints](#api-endpoints)
-3. [Налаштування фіскальних токенів](#фіскальні-токени)
-4. [Скрінсейвер](#скрінсейвер)
+2. [Початкові налаштування БД (таблиця Store)](#початкові-налаштування-бд)
+3. [API Endpoints](#api-endpoints)
+4. [Налаштування фіскальних токенів](#фіскальні-токени)
+5. [Скрінсейвер](#скрінсейвер)
 
 ---
 
@@ -129,6 +130,97 @@ WHERE auth_id = '998877';
 - **Settings**: If already running → Do not start a new instance
 
 Скрипт `start-kiosk.ps1` чекає поки фронт стане доступним на `http://localhost`, після чого запускає Chrome у кіоск-режимі.
+
+---
+
+## Початкові налаштування БД
+
+Всі налаштування кіоску зберігаються в таблиці `dbo.Store`. Один рядок = один кіоск.  
+`auth_id` має збігатися зі значенням `STORE_AUTH_ID` у `.env`.
+
+### Мінімальний рядок для запуску
+
+```sql
+INSERT INTO dbo.Store (auth_id, password, role, active_bank)
+VALUES (
+  '998877',                          -- має збігатись з STORE_AUTH_ID у .env
+  '$2b$10$...',                      -- bcrypt-хеш пароля (генерується окремо, див. нижче)
+  'store',
+  'privatbank'                       -- або 'monobank'
+);
+```
+
+> Решта полів заповнюється через API після першого запуску.
+
+---
+
+### Всі поля таблиці Store
+
+| Поле | Тип | Обов'язкове | Опис | Як заповнити |
+|---|---|:---:|---|---|
+| `auth_id` | VARCHAR(50) | ✅ | Унікальний ідентифікатор магазину. Збігається з `STORE_AUTH_ID` в `.env` | Вручну при створенні |
+| `password` | VARCHAR(200) | ✅ | bcrypt-хеш пароля для логіну фронтенду | Вручну (генерація нижче) |
+| `role` | VARCHAR(100) | ✅ | Роль — завжди `'store'` | Вручну при створенні |
+| `active_bank` | VARCHAR(20) | ✅ | Банк-провайдер терміналу: `'privatbank'` або `'monobank'` | Вручну або через API |
+| `default_merchant` | VARCHAR(100) | ✅¹ | ID мерчанта для оплат без ПДВ | `GET /api/config/merchant` |
+| `default_merchant_taxgrp` | INT | ✅¹ | Податкова група для товарів без ПДВ (напр. `7` — не є об'єктом ПДВ) | `POST /api/config/merchant` |
+| `is_single_merchant` | BIT | ✅¹ | `1` якщо один мерчант для всіх товарів | `GET /api/config/merchant` |
+| `fiscal_token` | NVARCHAR(255) | ✅² | Токен каси Вчасно.Каса (без ПДВ) | `POST /api/fiscal/tokens` |
+| `VAT_excise_merchant` | VARCHAR(100) | — | ID мерчанта для товарів з ПДВ/акцизом. `NULL` якщо один мерчант | `GET /api/config/merchant` |
+| `VAT_merchant_taxgrp` | INT | — | Податкова група для товарів з ПДВ 20% | `POST /api/config/merchant` |
+| `VAT_excise_taxgrp` | INT | — | Податкова група для товарів з ПДВ+акциз | `POST /api/config/merchant` |
+| `fiscal_token_vat` | NVARCHAR(255) | — | Токен другої каси Вчасно.Каса (з ПДВ). `NULL` якщо один РРО | `POST /api/fiscal/tokens` |
+| `use_VAT_by_default` | BIT | — | `1` — всі товари йдуть через VAT-мерчанта за замовчуванням | `POST /api/config/merchant` |
+| `store_name` | VARCHAR(100) | — | Назва магазину | Вручну або через Admin API |
+| `store_address` | NVARCHAR(100) | — | Адреса магазину | Вручну або через Admin API |
+| `store_sale_name` | NVARCHAR(100) | — | Назва поточної акції на слайдері | `POST /api/config/store-sale` |
+| `store_sale_title` | NVARCHAR(100) | — | Підзаголовок акції | `POST /api/config/store-sale` |
+| `store_sale_discount` | DECIMAL(10,2) | — | Розмір знижки акції у % | `POST /api/config/store-sale` |
+| `store_sale_product_category` | INT | — | cat_1C_id категорії для акції | `POST /api/config/store-sale` |
+| `store_sale_product_subcategory` | INT | — | subcat_1C_id підкатегорії для акції | `POST /api/config/store-sale` |
+| `screensaver` | VARCHAR(255) | — | Ім'я активного файлу скрінсейвера | `PUT /api/screensaver/active` |
+| `token` | VARCHAR(200) | — | Поточний JWT access token (керується автоматично при login/logout) | Автоматично |
+| `default_merchant_name` | NVARCHAR(100) | — | Назва мерчанта (для відображення) | `GET /api/config/merchant` |
+| `VAT_merchant_name` | NVARCHAR(100) | — | Назва VAT-мерчанта | `GET /api/config/merchant` |
+
+> ¹ Обов'язкове для проведення оплати (`POST /api/cart/sell`).  
+> ² Обов'язкове для фіскалізації чеків. Якщо не задано — fallback на `AUTH_MERCH_TOKEN` з `.env`.
+
+---
+
+### Генерація bcrypt-хешу пароля
+
+```bash
+docker exec mm-deploy-backend-1 node -e \
+  "const b=require('bcryptjs'); b.hash('ВАШ_ПАРОЛЬ',10).then(h=>console.log(h))"
+```
+
+Або локально (якщо встановлено Node.js):
+```bash
+node -e "const b=require('bcryptjs'); b.hash('ВАШ_ПАРОЛЬ',10).then(h=>console.log(h))"
+```
+
+Отриманий хеш вставити в поле `password`:
+```sql
+UPDATE dbo.Store SET password = '$2b$10$...' WHERE auth_id = '998877';
+```
+
+---
+
+### Послідовність першого налаштування
+
+1. **Вставити рядок Store** — `auth_id`, `password`, `role`, `active_bank`
+2. **Запустити бекенд** — `docker compose up -d`
+3. **Синхронізувати мерчантів** — `GET /api/config/merchant`  
+   Заповнює `default_merchant`, `VAT_excise_merchant`, `is_single_merchant`
+4. **Встановити податкові групи** — `POST /api/config/merchant`  
+   Задати `defaultMerchantTaxgrp` (і `vatExciseMerchantTaxgrp` якщо є VAT)
+5. **Додати токен Вчасно.Каса** — `POST /api/fiscal/tokens`  
+   Заповнює `fiscal_token` (і `fiscal_token_vat` якщо є другий РРО)
+6. **Завантажити товари** — через 1С-синхронізацію або `POST /api/products/add`
+7. **Завантажити категорії** — `POST /api/config/category` + `POST /api/config/subcategory`
+8. *(Опційно)* **Скрінсейвер** — `POST /api/screensaver/upload` → `PUT /api/screensaver/active`
+9. *(Опційно)* **Акція** — `POST /api/config/store-sale`
 
 ---
 
