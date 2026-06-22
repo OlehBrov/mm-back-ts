@@ -47,6 +47,7 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
 
   private readonly host: string;
   private readonly port: number;
+  private readonly paymentTimeoutMs: number;
   private readonly connectionTimeoutMs: number;
   private readonly reconnectIntervalMs: number;
   private readonly statusPollIntervalMs = 2000;
@@ -58,6 +59,7 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
   ) {
     this.host = config.get<string>('terminal.host') ?? '127.0.0.1';
     this.port = config.get<number>('terminal.monobankPort') ?? 3000;
+    this.paymentTimeoutMs = config.get<number>('terminal.paymentTimeoutMs') ?? 60000;
     this.connectionTimeoutMs = config.get<number>('terminal.connectionTimeoutMs') ?? 5000;
     this.reconnectIntervalMs = config.get<number>('terminal.reconnectIntervalMs') ?? 30000;
   }
@@ -229,10 +231,12 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
 
   // Two-phase polling after Purchase:
   //
-  // Phase 1 — wait for terminal to LEAVE S00 (max 5 s, 500 ms poll interval).
+  // Phase 1 — wait for terminal to LEAVE S00 (max 15 s, 500 ms poll interval).
   //   Confirms the terminal received and started processing the Purchase.
   //   If it stays in S00 the whole time, the Purchase wasn't processed
   //   (e.g. previous cancel still cached, stale TCP state) → throw PAYMENT_NOT_STARTED.
+  //   15 s (not 5 s) because after sleep wake-up the terminal may take a moment
+  //   to transition from S00 even after the Purchase ack is sent.
   //
   // Phase 2 — wait for terminal to RETURN to S00 (no deadline).
   //   The terminal manages its own "no card" timeout — we never impose one.
@@ -243,7 +247,7 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
   private async pollUntilIdle(): Promise<void> {
     // Phase 1: confirm terminal started processing
     const startPollMs = 500;
-    const startDeadline = Date.now() + 5_000;
+    const startDeadline = Date.now() + 15_000;
     let transactionStarted = false;
 
     while (Date.now() < startDeadline) {
@@ -330,6 +334,8 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
       // Step 1: send Purchase and wait for terminal ack.
       // Using request() instead of write() so immediate protocol errors (E07 merchant-not-found,
       // etc.) are thrown right away rather than silently ignored as unmatched messages.
+      // NOTE: paymentTimeoutMs (not connectionTimeoutMs) — terminal may be in sleep/energy-save
+      // mode and need up to ~15s to wake up before it can ACK the Purchase.
       await this.request<Record<string, unknown>>(
         {
           method: 'Purchase',
@@ -340,7 +346,7 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
           },
         },
         (r) => r['method'] === 'Purchase',
-        this.connectionTimeoutMs,
+        this.paymentTimeoutMs,
       );
 
       // Step 2: poll GetStatus until S00 — terminal signals idle itself (success or no-card timeout).
