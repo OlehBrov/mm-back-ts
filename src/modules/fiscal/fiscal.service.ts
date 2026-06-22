@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import axios from 'axios';
@@ -6,6 +6,16 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../database/prisma.service';
 import { MailerService } from '../mailer/mailer.service';
 import { FiscalDocument, FiscalPayload } from './dto/fiscal-job.dto';
+
+export interface VchasnoTokenStatus {
+  valid: boolean;
+  res: number;
+  errortxt: string;
+  fisid?: string;
+  isFis?: number;
+  shift_status?: number;
+  online_status?: number;
+}
 
 export const RECEIPT_READY_EVENT = 'fiscal.receiptReady';
 
@@ -23,11 +33,15 @@ class FiscalFatalError extends Error {
 }
 
 @Injectable()
-export class FiscalService {
+export class FiscalService implements OnModuleInit {
   private readonly logger = new Logger(FiscalService.name);
   private readonly http: ReturnType<typeof axios.create>;
-  private readonly merchantToken: string;
-  private readonly merchantTokenVat: string;
+  private readonly storeAuthId: string;
+  // Env fallback — used only when DB has no tokens yet
+  private readonly envToken: string;
+  private readonly envTokenVat: string;
+  // In-memory cache; cleared on saveFiscalTokens()
+  private tokenCache: { token: string; tokenVat: string } | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -35,14 +49,138 @@ export class FiscalService {
     private readonly mailer: MailerService,
     private readonly events: EventEmitter2,
   ) {
-    this.merchantToken = config.get<string>('fiscal.merchantToken') ?? '';
-    this.merchantTokenVat = config.get<string>('fiscal.merchantTokenVat') ?? '';
+    this.storeAuthId = config.get<string>('store.authId') ?? '';
+    this.envToken = config.get<string>('fiscal.merchantToken') ?? '';
+    this.envTokenVat = config.get<string>('fiscal.merchantTokenVat') ?? '';
 
     this.http = axios.create({
       baseURL: config.get<string>('fiscal.host'),
       timeout: 60000,
       headers: { 'Content-Type': 'application/json' },
     });
+  }
+
+  async onModuleInit(): Promise<void> {
+    // Verify tokens in the background — don't block startup
+    void this.verifyAndLogAllTokens();
+  }
+
+  private async verifyAndLogAllTokens(): Promise<void> {
+    try {
+      const { token, tokenVat } = await this.getActiveTokens();
+
+      const s1 = await this.verifyToken(token);
+      this.logger.log(
+        `Fiscal token check: valid=${s1.valid}, fisid=${s1.fisid ?? '?'}, ` +
+        `isFis=${s1.isFis ?? '?'}, shift=${s1.shift_status ?? '?'}, ` +
+        `online=${s1.online_status ?? '?'}` +
+        (s1.valid ? '' : ` | error: ${s1.errortxt}`),
+      );
+
+      if (tokenVat && tokenVat !== token) {
+        const s2 = await this.verifyToken(tokenVat);
+        this.logger.log(
+          `Fiscal token VAT check: valid=${s2.valid}, fisid=${s2.fisid ?? '?'}, ` +
+          `isFis=${s2.isFis ?? '?'}, shift=${s2.shift_status ?? '?'}, ` +
+          `online=${s2.online_status ?? '?'}` +
+          (s2.valid ? '' : ` | error: ${s2.errortxt}`),
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`Token verification failed on startup: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // ─── Token management ────────────────────────────────────────────────────
+
+  private async getActiveTokens(): Promise<{ token: string; tokenVat: string }> {
+    if (this.tokenCache) return this.tokenCache;
+
+    const store = await this.prisma.store.findFirst({
+      where: { auth_id: this.storeAuthId },
+      select: { fiscal_token: true, fiscal_token_vat: true },
+    });
+
+    this.tokenCache = {
+      token: store?.fiscal_token ?? this.envToken,
+      tokenVat: store?.fiscal_token_vat ?? this.envTokenVat,
+    };
+    return this.tokenCache;
+  }
+
+  async verifyToken(token: string): Promise<VchasnoTokenStatus> {
+    if (!token) {
+      return { valid: false, res: -1, errortxt: 'Token is empty' };
+    }
+    try {
+      const resp = await this.http.post<Record<string, unknown>>(
+        '/api/v3/fiscal/execute',
+        { fiscal: { task: 18 } },
+        { headers: { Authorization: token }, timeout: 15000 },
+      );
+      const data = resp.data;
+      const res = (data['res'] as number) ?? -1;
+      const info = (data['info'] as Record<string, unknown>) ?? {};
+      return {
+        valid: res === 0,
+        res,
+        errortxt: (data['errortxt'] as string) ?? '',
+        fisid: info['fisid'] as string | undefined,
+        isFis: info['isFis'] as number | undefined,
+        shift_status: info['shift_status'] as number | undefined,
+        online_status: info['online_status'] as number | undefined,
+      };
+    } catch (err) {
+      return { valid: false, res: -1, errortxt: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  async getFiscalTokenStatus(): Promise<{
+    token: string;
+    tokenVat: string | null;
+    tokenStatus: VchasnoTokenStatus;
+    tokenVatStatus: VchasnoTokenStatus | null;
+  }> {
+    const store = await this.prisma.store.findFirst({
+      where: { auth_id: this.storeAuthId },
+      select: { fiscal_token: true, fiscal_token_vat: true },
+    });
+
+    const token = store?.fiscal_token ?? this.envToken;
+    const tokenVat = store?.fiscal_token_vat ?? this.envTokenVat ?? null;
+
+    const [s1, s2] = await Promise.all([
+      this.verifyToken(token),
+      tokenVat && tokenVat !== token ? this.verifyToken(tokenVat) : Promise.resolve(null),
+    ]);
+
+    return { token, tokenVat, tokenStatus: s1, tokenVatStatus: s2 };
+  }
+
+  async saveFiscalTokens(
+    token: string,
+    tokenVat: string | null,
+  ): Promise<{
+    tokenStatus: VchasnoTokenStatus;
+    tokenVatStatus: VchasnoTokenStatus | null;
+  }> {
+    await this.prisma.store.update({
+      where: { auth_id: this.storeAuthId },
+      data: { fiscal_token: token, fiscal_token_vat: tokenVat },
+    });
+    this.tokenCache = null; // invalidate cache
+
+    const [tokenStatus, tokenVatStatus] = await Promise.all([
+      this.verifyToken(token),
+      tokenVat && tokenVat !== token ? this.verifyToken(tokenVat) : Promise.resolve(null),
+    ]);
+
+    this.logger.log(
+      `Fiscal tokens updated. NoVAT valid=${tokenStatus.valid}` +
+      (tokenVatStatus ? `, VAT valid=${tokenVatStatus.valid}` : ''),
+    );
+
+    return { tokenStatus, tokenVatStatus };
   }
 
   /**
@@ -81,9 +219,10 @@ export class FiscalService {
 
   /** Returns distinct (bank, merchant_id, with_vat) combinations that have pending/processing jobs. */
   async getActiveQueues(): Promise<Array<{ bank: string; merchant_id: string; with_vat: boolean }>> {
-    return this.prisma.fiscalQueue.groupBy({
-      by: ['bank', 'merchant_id', 'with_vat'],
+    return this.prisma.fiscalQueue.findMany({
       where: { status: { in: ['pending', 'processing'] } },
+      select: { bank: true, merchant_id: true, with_vat: true },
+      distinct: ['bank', 'merchant_id', 'with_vat'],
     });
   }
 
@@ -275,7 +414,8 @@ export class FiscalService {
   }
 
   async executeRequest(payload: FiscalPayload): Promise<{ mapped: FiscalDocument; raw: Record<string, unknown> }> {
-    const token = payload.withVat ? this.merchantTokenVat : this.merchantToken;
+    const tokens = await this.getActiveTokens();
+    const token = payload.withVat ? tokens.tokenVat : tokens.token;
 
     // Strip internal withVat flag before sending to vchasno.kasa
     const { withVat: _withVat, ...apiPayload } = payload;
