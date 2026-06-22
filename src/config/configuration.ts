@@ -11,7 +11,8 @@ export default () => ({
   terminal: {
     provider: process.env.TERMINAL_PROVIDER ?? 'privatbank',
     host: process.env.CLIENT_HOST,
-    port: parseInt(process.env.CLIENT_PORT ?? '3000', 10),
+    privatbankPort: parseInt(process.env.PRIVATBANK_PORT ?? '2000', 10),
+    monobankPort: parseInt(process.env.MONOBANK_PORT ?? '3000', 10),
     paymentTimeoutMs: parseInt(process.env.TERMINAL_PAYMENT_TIMEOUT_MS ?? '60000', 10),
     connectionTimeoutMs: parseInt(process.env.TERMINAL_CONNECTION_TIMEOUT_MS ?? '5000', 10),
     reconnectIntervalMs: parseInt(process.env.TERMINAL_RECONNECT_INTERVAL_MS ?? '30000', 10),

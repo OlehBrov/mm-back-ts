@@ -23,7 +23,7 @@ import { TERMINAL_STATUS_EVENT } from '../../constants';
 //                  (no GetStatus polling, no GetLastResult — that is MonoBank SSI JSON)
 //   - Cancel:      ServiceMessage { msgType: "interrupt" }
 //   - Merchant list: ServiceMessage { msgType: "getMerchantList" }
-//   - Default port: 2000  (configurable via terminal.port env)
+//   - Default port: 2000  (configurable via PRIVATBANK_PORT env)
 
 interface ResponseListener {
   matcher: (data: Record<string, unknown>) => boolean;
@@ -59,7 +59,7 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
     private readonly events: EventEmitter2,
   ) {
     this.host = config.get<string>('terminal.host') ?? '127.0.0.1';
-    this.port = config.get<number>('terminal.port') ?? 2000; // PrivatBank default port is 2000
+    this.port = config.get<number>('terminal.privatbankPort') ?? 2000;
     this.paymentTimeoutMs = config.get<number>('terminal.paymentTimeoutMs') ?? 60000;
     this.connectionTimeoutMs = config.get<number>('terminal.connectionTimeoutMs') ?? 5000;
     this.reconnectIntervalMs = config.get<number>('terminal.reconnectIntervalMs') ?? 30000;

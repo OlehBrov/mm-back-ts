@@ -57,7 +57,7 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
     private readonly prisma: PrismaService,
   ) {
     this.host = config.get<string>('terminal.host') ?? '127.0.0.1';
-    this.port = config.get<number>('terminal.port') ?? 3000;
+    this.port = config.get<number>('terminal.monobankPort') ?? 3000;
     this.connectionTimeoutMs = config.get<number>('terminal.connectionTimeoutMs') ?? 5000;
     this.reconnectIntervalMs = config.get<number>('terminal.reconnectIntervalMs') ?? 30000;
   }
