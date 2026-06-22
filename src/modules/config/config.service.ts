@@ -299,18 +299,33 @@ export class ConfigStoreService {
     };
   }
 
+  // ─── GET /api/config/terminal-merchants ──────────────────────────────────
+
+  async getTerminalMerchants() {
+    const merchants = await this.terminalService.getMerchants();
+    return { merchants };
+  }
+
   // ─── GET /api/config/merchant ─────────────────────────────────────────────
 
   async getMerchantData() {
-    const merchants = { noVAT: '1', VAT: '11', defaultMerchantName: '', VATMerchantName: '', is_single_merchant: false };
+    const merchants = { noVAT: '', VAT: null as string | null, defaultMerchantName: '', VATMerchantName: '', is_single_merchant: false };
 
     try {
       const merchantList = await this.terminalService.getMerchants();
       if (Array.isArray(merchantList) && merchantList.length) {
-        merchantList.forEach((item, i) => {
-          if (i === 0) { merchants.noVAT = item.merchantId; merchants.defaultMerchantName = item.merchantName ?? ''; merchants.is_single_merchant = merchantList.length === 1; }
-          if (i === 1) { merchants.VAT = item.merchantId; merchants.VATMerchantName = item.merchantName ?? ''; }
-        });
+        merchants.noVAT = merchantList[0].merchantId;
+        merchants.defaultMerchantName = merchantList[0].merchantName ?? '';
+        if (merchantList.length === 1) {
+          // Single payment merchant — no separate VAT merchant
+          merchants.VAT = null;
+          merchants.VATMerchantName = '';
+          merchants.is_single_merchant = true;
+        } else {
+          merchants.VAT = merchantList[1].merchantId;
+          merchants.VATMerchantName = merchantList[1].merchantName ?? '';
+          merchants.is_single_merchant = false;
+        }
       }
     } catch (err) {
       this.logger.warn(`Could not fetch merchant list from terminal: ${err}`);

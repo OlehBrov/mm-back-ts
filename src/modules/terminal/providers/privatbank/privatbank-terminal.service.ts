@@ -354,7 +354,12 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
 
     const params = (response['params'] as Record<string, string>) ?? {};
     return Object.entries(params)
-      .filter(([key]) => key !== 'msgType')
+      .filter(([key, value]) =>
+        key !== 'msgType' &&
+        // Exclude refund-only merchants — PrivatBank includes them in the list but they are
+        // not payment merchants. We identify them by "Повернення" in the name.
+        !String(value).toLowerCase().includes('повернення'),
+      )
       .map(([key, name]) => ({ merchantId: key, merchantName: String(name) }));
   }
 

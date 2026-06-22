@@ -55,6 +55,11 @@ export class ConfigController {
     return this.configService.getMerchantData();
   }
 
+  @Get('terminal-merchants')
+  getTerminalMerchants() {
+    return this.configService.getTerminalMerchants();
+  }
+
   @Post('merchant')
   @HttpCode(200)
   setMerchantData(@Body() body: SetMerchantDto) {
