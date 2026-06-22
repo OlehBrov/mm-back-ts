@@ -116,16 +116,28 @@ export class CartService {
       // ── Payment 1: noVAT products → default_merchant ─────────────────────
       if (hasNoVat) {
         const amountKopeks = this.calculateAmountKopeks(noVatProducts);
+        const discountKopeks = this.calculateDiscountKopeks(noVatProducts);
         // Throws on terminal decline → caught by outer catch, sale aborted entirely
         const terminalResponse = await this.processTerminalPayment(
           amountKopeks,
           store.default_merchant!,
+          discountKopeks,
         );
-        fiscalResponse.fiscalNoVAT = await this.processPostPayment(
-          noVatProducts,
-          terminalResponse,
-          false,
-        );
+        // Payment confirmed — wrap post-processing separately so a DB failure here
+        // does NOT bubble up as a payment error (money was already taken).
+        try {
+          fiscalResponse.fiscalNoVAT = await this.processPostPayment(
+            noVatProducts,
+            terminalResponse,
+            false,
+          );
+        } catch (postErr) {
+          this.logger.error(
+            `CRITICAL: noVAT payment succeeded (merchant=${store.default_merchant}) ` +
+            `but post-payment DB write failed — sale may be unrecorded! ` +
+            `Error: ${postErr instanceof Error ? postErr.message : String(postErr)}`,
+          );
+        }
       }
 
       // ── Payment 2: VAT/excise products → VAT_excise_merchant ─────────────
@@ -136,12 +148,14 @@ export class CartService {
         }
 
         const amountKopeks = this.calculateAmountKopeks(vatProducts);
+        const discountKopeks = this.calculateDiscountKopeks(vatProducts);
 
         let terminalResponse: PaymentResponse;
         try {
           terminalResponse = await this.processTerminalPayment(
             amountKopeks,
             store.VAT_excise_merchant!,
+            discountKopeks,
           );
         } catch (vatErr) {
           // noVAT already completed — return partial success, not a full error
@@ -158,11 +172,20 @@ export class CartService {
           throw vatErr;
         }
 
-        fiscalResponse.fiscalWithVAT = await this.processPostPayment(
-          vatProducts,
-          terminalResponse,
-          true,
-        );
+        // Same guard: VAT payment confirmed — isolate post-processing failure.
+        try {
+          fiscalResponse.fiscalWithVAT = await this.processPostPayment(
+            vatProducts,
+            terminalResponse,
+            true,
+          );
+        } catch (postErr) {
+          this.logger.error(
+            `CRITICAL: VAT payment succeeded (merchant=${store.VAT_excise_merchant}) ` +
+            `but post-payment DB write failed — sale may be unrecorded! ` +
+            `Error: ${postErr instanceof Error ? postErr.message : String(postErr)}`,
+          );
+        }
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'PAYMENT_CANCELLED') {
@@ -245,6 +268,12 @@ export class CartService {
     return Math.round(parseFloat(total.toFixed(2)) * 100);
   }
 
+  /** Total discount in kopeks for a product group (discount × qty, rounded). */
+  private calculateDiscountKopeks(products: EnrichedProduct[]): number {
+    const total = products.reduce((sum, p) => sum + p.priceDecrement * p.inCartQuantity, 0);
+    return Math.round(parseFloat(total.toFixed(2)) * 100);
+  }
+
   /**
    * Creates a TerminalOperations record before sending the payment (for audit),
    * calls the terminal service, then updates the record with the result.
@@ -253,6 +282,7 @@ export class CartService {
   private async processTerminalPayment(
     amountKopeks: number,
     merchantId: string,
+    discountKopeks: number = 0,
   ): Promise<PaymentResponse> {
     const transactionUuid = randomUUID();
 
@@ -271,6 +301,7 @@ export class CartService {
     try {
       const response = await this.terminalService.sendPayment({
         amount: amountKopeks,
+        discount: discountKopeks,
         merchantId,
         currency: '980',
       });

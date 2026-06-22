@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { TerminalService } from './terminal.service';
@@ -7,6 +7,7 @@ import { MonoBankTerminalService } from './providers/monobank/monobank-terminal.
 import { TERMINAL_PROVIDER } from './constants';
 import { PrismaService } from '../../database/prisma.service';
 
+@Global()
 @Module({
   providers: [
     PrivatBankTerminalService,

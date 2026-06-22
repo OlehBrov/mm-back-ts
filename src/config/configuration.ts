@@ -25,6 +25,7 @@ export default () => ({
   images: {
     dir: process.env.IMAGE_DIR ?? 'C:/mm-images',
     categoryDir: process.env.CATEGORY_IMAGE_DIR ?? 'C:/mm-images/cat-images',
+    screensaverDir: process.env.SCREENSAVER_DIR ?? 'C:/mm-images/screensavers',
   },
   store: {
     id: parseInt(process.env.STORE_ID ?? '1', 10),

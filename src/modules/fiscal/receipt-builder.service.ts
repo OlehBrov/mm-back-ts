@@ -22,8 +22,10 @@ export class ReceiptBuilderService {
   build(cart: CartProductsObject, terminalResponse: PaymentResponse, withVat: boolean): FiscalPayload {
     const params = terminalResponse.params;
 
-    const transactionDate = (params.date as string).split('/').reverse().join('');
-    const transactionTime = (params.time as string).split(':').join('');
+    const rawDate = (params.date as string | undefined) ?? '';
+    const rawTime = (params.time as string | undefined) ?? '000000';
+    const transactionDate = rawDate.split('/').reverse().join('');
+    const transactionTime = rawTime.split(':').join('');
     const dt = transactionDate.concat(transactionTime);
 
     const rows = cart.cartProducts.map((prod) => {

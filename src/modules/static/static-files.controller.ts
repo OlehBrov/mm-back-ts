@@ -4,6 +4,7 @@ import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 
+
 @Controller('product-image')
 export class ProductImageController {
   private readonly imagesDir: string;
@@ -41,6 +42,27 @@ export class CategoryImageController {
     }
     if (!fs.existsSync(filePath)) {
       throw new NotFoundException(`Image ${filename} not found`);
+    }
+    res.sendFile(filePath);
+  }
+}
+
+@Controller('screensaver-file')
+export class ScreensaverFileController {
+  private readonly screensaverDir: string;
+
+  constructor(config: ConfigService) {
+    this.screensaverDir = config.get<string>('images.screensaverDir') ?? 'C:/mm-images/screensavers';
+  }
+
+  @Get(':filename')
+  serveScreensaverFile(@Param('filename') filename: string, @Res() res: Response) {
+    const filePath = path.resolve(this.screensaverDir, filename);
+    if (!filePath.startsWith(path.resolve(this.screensaverDir))) {
+      throw new NotFoundException('File not found');
+    }
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException(`Screensaver file ${filename} not found`);
     }
     res.sendFile(filePath);
   }

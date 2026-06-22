@@ -13,6 +13,7 @@ import { ConfigStoreModule } from './modules/config/config.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { StaticModule } from './modules/static/static.module';
 import { MailerModule } from './modules/mailer/mailer.module';
+import { ScreensaverModule } from './modules/screensaver/screensaver.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -34,6 +35,7 @@ import configuration from './config/configuration';
     ConfigStoreModule,
     AdminModule,
     StaticModule,
+    ScreensaverModule,
   ],
 })
 export class AppModule {}

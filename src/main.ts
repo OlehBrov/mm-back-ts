@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as express from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
@@ -45,7 +46,11 @@ async function runMigrations() {
 async function bootstrap() {
   await runMigrations();
 
-  const app = await NestFactory.create(AppModule);
+  // Disable default body parser so we can set a higher limit for image uploads
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use(express.json({ limit: '200mb' }));
+  app.use(express.urlencoded({ limit: '200mb', extended: true }));
+
   const config = app.get(ConfigService);
   const port = config.get<number>('port') ?? 6006;
   const logger = new Logger('Bootstrap');

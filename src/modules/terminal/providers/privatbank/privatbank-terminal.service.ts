@@ -12,6 +12,7 @@ import {
   buildPrivatMessage,
   buildPrivatHandshake,
   parseNullTerminatedBuffer,
+  parseRawJsonBuffer,
 } from './privat-protocol.utils';
 import { TERMINAL_STATUS_EVENT } from '../../constants';
 
@@ -41,6 +42,8 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
   private isReconnecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private saleInProgress = false;
+  private isPinging = false;
+  private hasInitialized = false;
 
   // Set to true by terminal.module factory before onModuleInit fires.
   shouldConnect = false;
@@ -63,7 +66,8 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
   }
 
   onModuleInit() {
-    if (!this.shouldConnect) return;
+    if (!this.shouldConnect || this.hasInitialized) return;
+    this.hasInitialized = true;
     this.client = this.createSocket();
     this.client.connect(this.port, this.host);
   }
@@ -90,6 +94,7 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
     });
 
     socket.on('data', (data: Buffer) => {
+      this.logger.debug(`RAW IN <<< ${data.length} bytes: ${data.toString('hex')}`);
       this.accumulatedBuffer = Buffer.concat([this.accumulatedBuffer, data]);
       this.processBuffer();
     });
@@ -113,7 +118,9 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
 
   private processBuffer() {
     while (true) {
-      const result = parseNullTerminatedBuffer(this.accumulatedBuffer);
+      const result =
+        parseNullTerminatedBuffer(this.accumulatedBuffer) ??
+        parseRawJsonBuffer(this.accumulatedBuffer);
       if (!result) break;
 
       this.accumulatedBuffer = this.accumulatedBuffer.subarray(result.consumed);
@@ -229,6 +236,7 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
   }
 
   private setStatus(status: 'online' | 'offline') {
+    if (this.terminalStatus === status) return;
     this.terminalStatus = status;
     this.events.emit(TERMINAL_STATUS_EVENT, { status });
   }
@@ -253,6 +261,8 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
   }
 
   async ping(): Promise<void> {
+    if (this.isPinging) return;
+    this.isPinging = true;
     try {
       // PingDevice uses the handshake framing (\x00{json}\x00).
       await this.request(
@@ -266,6 +276,8 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
       this.setStatus('online');
     } catch {
       this.setStatus('offline');
+    } finally {
+      this.isPinging = false;
     }
   }
 
@@ -273,8 +285,9 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
     this.saleInProgress = true;
     try {
       // PrivatBank: send Purchase → wait for ONE final response containing all params.
-      // amount is in kopeks in PaymentRequest; PrivatBank expects UAH decimal string.
+      // amount and discount are in kopeks in PaymentRequest; PrivatBank expects UAH decimal strings.
       const amount = (req.amount / 100).toFixed(2);
+      const discount = (req.discount / 100).toFixed(2);
 
       // resolveOnError=true: Purchase error responses (cancel, decline) carry params we need to
       // inspect (responseCode, trnStatus) — let sendPayment() decide how to handle them.
@@ -282,7 +295,7 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
         {
           method: 'Purchase',
           step: 0,
-          params: { amount, merchantId: req.merchantId },
+          params: { amount, discount, merchantId: req.merchantId, facepay: 'false' },
         },
         (r) => r['method'] === 'Purchase',
         this.paymentTimeoutMs,

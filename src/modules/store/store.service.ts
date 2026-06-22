@@ -663,31 +663,40 @@ export class StoreService {
   // ─── POST /api/products/image ──────────────────────────────────────────────
 
   async saveProductImages(items: SaveImageDto[]) {
-    for (const item of items) {
-      const { productImage, fileName } = item;
-      if (!productImage || !fileName) {
-        throw new BadRequestException('Missing image data or file name');
-      }
-      const buffer = Buffer.from(productImage, 'base64');
-      const filePath = path.join(this.imagesDir, fileName);
-      fs.writeFile(filePath, buffer, (err) => {
-        if (err) this.logger.error(`Failed to write image ${fileName}: ${err.message}`);
-      });
+    const valid = items.filter(i => i.productImage && i.fileName);
+    if (!valid.length) return { saved: 0, skipped: items.length };
 
-      const barcode = fileName.slice(0, fileName.lastIndexOf('.'));
-      if (barcode) {
-        const productInDb = await this.prisma.products.findUnique({ where: { barcode } });
-        if (productInDb) {
-          await this.prisma.products.update({
-            where: { barcode },
-            data: { product_image: `${this.mmHost}/api/product-image/${fileName}` },
-          });
-        }
-      }
+    // Write files in parallel, 20 at a time — avoids I/O overload
+    const CHUNK = 20;
+    for (let i = 0; i < valid.length; i += CHUNK) {
+      await Promise.all(
+        valid.slice(i, i + CHUNK).map(({ fileName, productImage }) =>
+          fsPromises
+            .writeFile(path.join(this.imagesDir, fileName), Buffer.from(productImage, 'base64'))
+            .catch(err => this.logger.error(`Failed to write ${fileName}: ${err.message}`)),
+        ),
+      );
+    }
+
+    // Batch DB update — updateMany silently skips barcodes not in DB,
+    // no need for a findUnique pre-check per item
+    const dbUpdates = valid
+      .map(({ fileName }) => {
+        const barcode = fileName.slice(0, fileName.lastIndexOf('.'));
+        if (!barcode) return null;
+        return this.prisma.products.updateMany({
+          where: { barcode },
+          data: { product_image: `${this.mmHost}/api/product-image/${fileName}` },
+        });
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null);
+
+    if (dbUpdates.length) {
+      await this.prisma.$transaction(dbUpdates);
     }
 
     this.events.emit(PRODUCT_UPDATED_EVENT);
-    return { message: 'File(s) uploaded successfully' };
+    return { saved: valid.length, skipped: items.length - valid.length };
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────

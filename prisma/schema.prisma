@@ -189,6 +189,7 @@ model Store {
   VAT_merchant_name              String?        @db.NVarChar(100)
   store_address                  String?        @db.NVarChar(100)
   active_bank                    String?        @db.VarChar(20)
+  screensaver                    String?        @db.VarChar(255)
   Categories                     Categories?    @relation(fields: [store_sale_product_category], references: [cat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Categories_FK")
   Subcategories                  Subcategories? @relation(fields: [store_sale_product_subcategory], references: [subcat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Subcategories_FK")
 }

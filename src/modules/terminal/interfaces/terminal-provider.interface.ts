@@ -1,5 +1,6 @@
 export interface PaymentRequest {
-  amount: number;       // in kopecks (e.g. 10050 = 100.50 UAH)
+  amount: number;       // in kopecks (e.g. 10050 = 100.50 UAH), net after discount
+  discount: number;     // total discount in kopecks
   merchantId: string;
   currency?: string;    // default '980' (UAH)
 }
