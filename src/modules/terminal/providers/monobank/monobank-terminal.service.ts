@@ -82,6 +82,8 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
   private createSocket(): net.Socket {
     const socket = new net.Socket();
 
+    socket.setKeepAlive(true, 15_000);
+
     socket.on('connect', () => {
       this.logger.log(`Connected to MonoBank terminal at ${this.host}:${this.port}`);
       this.clearReconnect();

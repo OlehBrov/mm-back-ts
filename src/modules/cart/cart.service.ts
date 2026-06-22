@@ -19,6 +19,7 @@ export const SECOND_PAYMENT_EVENT = 'cart.secondPayment';
 
 interface StoreConfig {
   auth_id: string;
+  active_bank: string | null;
   default_merchant: string | null;
   VAT_excise_merchant: string | null;
   default_merchant_taxgrp: number | null;
@@ -77,6 +78,7 @@ export class CartService {
       where: { auth_id: storeAuthId },
       select: {
         auth_id: true,
+        active_bank: true,
         default_merchant: true,
         VAT_excise_merchant: true,
         default_merchant_taxgrp: true,
@@ -130,6 +132,8 @@ export class CartService {
             noVatProducts,
             terminalResponse,
             false,
+            store.active_bank ?? '',
+            store.default_merchant!,
           );
         } catch (postErr) {
           this.logger.error(
@@ -178,6 +182,8 @@ export class CartService {
             vatProducts,
             terminalResponse,
             true,
+            store.active_bank ?? '',
+            store.VAT_excise_merchant!,
           );
         } catch (postErr) {
           this.logger.error(
@@ -344,6 +350,8 @@ export class CartService {
     products: EnrichedProduct[],
     terminalResponse: PaymentResponse,
     withVat: boolean,
+    bank: string,
+    merchantId: string,
   ): Promise<PostPaymentResult> {
     const params = terminalResponse.params;
 
@@ -390,7 +398,7 @@ export class CartService {
     }
 
     await this.updateStock(products);
-    await this.fiscalService.enqueue(fiscalPayload, removeIds);
+    await this.fiscalService.enqueue(fiscalPayload, removeIds, bank, merchantId);
 
     this.logger.log(
       `Saved ${products.length} products (withVat=${withVat}), removeIds=[${removeIds.join(', ')}]`,

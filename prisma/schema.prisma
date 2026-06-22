@@ -332,6 +332,8 @@ model FiscalQueue {
   id                 Int       @id(map: "FiscalQueue_PK") @default(autoincrement())
   payload            String    @db.NVarChar(Max)
   with_vat           Boolean   @default(false, map: "DF__FiscalQue__with___VAT")
+  bank               String    @default("", map: "DF__FiscalQue__bank") @db.VarChar(20)
+  merchant_id        String    @default("", map: "DF__FiscalQue__merch") @db.VarChar(100)
   status             String    @default("pending", map: "DF__FiscalQue__status") @db.VarChar(20)
   attempts           Int       @default(0, map: "DF__FiscalQue__attemp")
   max_attempts       Int       @default(10, map: "DF__FiscalQue__max_at")

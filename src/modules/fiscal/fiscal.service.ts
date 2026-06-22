@@ -50,7 +50,12 @@ export class FiscalService {
    * NEVER sends directly — all receipts go through the queue
    * to guarantee chronological order required by vchasno.kasa.
    */
-  async enqueue(payload: FiscalPayload, removeProductIds: number[]): Promise<void> {
+  async enqueue(
+    payload: FiscalPayload,
+    removeProductIds: number[],
+    bank: string,
+    merchantId: string,
+  ): Promise<void> {
     // Assign a stable tag UUID now — it must remain the same on every retry so
     // vchasno can detect duplicates and avoid registering the same receipt twice.
     // See vchasno docs: "Для уникнення дублювання чеків, повторні запити слід
@@ -61,49 +66,60 @@ export class FiscalService {
       data: {
         payload: JSON.stringify(stablePayload),
         with_vat: stablePayload.withVat,
+        bank,
+        merchant_id: merchantId,
         status: 'pending',
         remove_product_ids: JSON.stringify(removeProductIds),
         next_retry_at: new Date(),
       },
     });
-    this.logger.log(`Fiscal receipt enqueued for products: [${removeProductIds.join(', ')}]`);
+    this.logger.log(
+      `Fiscal receipt enqueued [bank=${bank}, merchant=${merchantId}, vat=${stablePayload.withVat}] ` +
+        `for products: [${removeProductIds.join(', ')}]`,
+    );
+  }
+
+  /** Returns distinct (bank, merchant_id, with_vat) combinations that have pending/processing jobs. */
+  async getActiveQueues(): Promise<Array<{ bank: string; merchant_id: string; with_vat: boolean }>> {
+    return this.prisma.fiscalQueue.groupBy({
+      by: ['bank', 'merchant_id', 'with_vat'],
+      where: { status: { in: ['pending', 'processing'] } },
+    });
   }
 
   /**
-   * Processes the single oldest pending job for the given merchant stream.
-   * withVat=false → merchantToken (noVAT RRO); withVat=true → merchantTokenVat (VAT RRO).
+   * Processes the single oldest pending job for one specific (bank, merchant_id, with_vat) stream.
+   * Each stream is fully independent — a failure in one does NOT block others.
+   * Vchasno enforces chronological order per RRO account (merchant+vat), not globally.
    *
-   * Each stream is independent — a failure in one does NOT block the other, because
-   * vchasno.kasa enforces chronological order per RRO account, not across accounts.
-   *
-   * IMPORTANT: We first find the globally oldest pending job in this stream (ignoring
-   * next_retry_at), then check if it is ready. If it is NOT ready (backoff not expired),
-   * we block this stream — we must NOT skip to a newer job in the same stream, because
-   * vchasno.kasa requires strict chronological order within each RRO account.
+   * IMPORTANT: finds the OLDEST job first (ignoring next_retry_at), then checks backoff.
+   * Never skips to a newer job — that would violate vchasno's chronological order requirement.
    */
-  async processQueue(withVat: boolean): Promise<void> {
+  async processQueue(bank: string, merchantId: string, withVat: boolean): Promise<void> {
+    const streamLabel = `bank=${bank}, merchant=${merchantId}, vat=${withVat}`;
+
     // Safety: skip if any job in this stream is currently being processed
     const processing = await this.prisma.fiscalQueue.findFirst({
-      where: { status: 'processing', with_vat: withVat },
+      where: { status: 'processing', with_vat: withVat, bank, merchant_id: merchantId },
     });
     if (processing) {
-      this.logger.debug(`Job #${processing.id} still processing — skipping cycle (withVat=${withVat})`);
+      this.logger.debug(`Job #${processing.id} still processing — skipping cycle (${streamLabel})`);
       return;
     }
 
     // Find the oldest pending job in this stream (no next_retry_at filter here!)
     const oldestJob = await this.prisma.fiscalQueue.findFirst({
-      where: { status: 'pending', with_vat: withVat },
+      where: { status: 'pending', with_vat: withVat, bank, merchant_id: merchantId },
       orderBy: { created_at: 'asc' },
     });
 
     if (!oldestJob) return;
 
-    // If the oldest job is still in backoff — block the entire queue.
-    // Do NOT skip to a newer job; that would violate chronological order.
+    // If the oldest job is still in backoff — block the entire stream.
+    // Do NOT skip to a newer job; that would violate chronological order within this RRO.
     if (oldestJob.next_retry_at > new Date()) {
       this.logger.debug(
-        `Fiscal queue (withVat=${withVat}) BLOCKED — oldest job #${oldestJob.id} not ready until ` +
+        `Fiscal queue (${streamLabel}) BLOCKED — oldest job #${oldestJob.id} not ready until ` +
           `${oldestJob.next_retry_at.toISOString()} (attempt ${oldestJob.attempts}/${oldestJob.max_attempts})`,
       );
       return;
@@ -283,10 +299,22 @@ export class FiscalService {
     }
 
     const doccode = (data['info'] as Record<string, unknown>)['doccode'] as string;
-    const fiscalDocResponse = await this.http.get<Record<string, unknown>>(
-      `/c/${doccode}.json`,
-      { headers: { Authorization: token } },
-    );
+
+    let fiscalDocResponse: Awaited<ReturnType<typeof this.http.get<Record<string, unknown>>>>;
+    try {
+      fiscalDocResponse = await this.http.get<Record<string, unknown>>(
+        `/c/${doccode}.json`,
+        { headers: { Authorization: token } },
+      );
+    } catch (err) {
+      // POST succeeded and the receipt IS registered in vchasno (doccode exists).
+      // Log doccode so it can be recovered manually if retries also fail.
+      this.logger.error(
+        `Fiscal receipt registered (doccode=${doccode}) but GET /c/${doccode}.json failed. ` +
+          `Job will retry with same tag — vchasno will return same doccode. Error: ${(err as Error).message}`,
+      );
+      throw err;
+    }
 
     const raw = fiscalDocResponse.data as Record<string, unknown>;
     return { mapped: this.mapFiscalResult(raw), raw };

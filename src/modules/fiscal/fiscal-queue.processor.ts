@@ -11,19 +11,25 @@ export class FiscalQueueProcessor {
 
   /**
    * Runs every 10 seconds.
-   * Processes the oldest pending job in EACH stream (noVAT and VAT) independently.
-   * A failure in one RRO stream does NOT block the other — vchasno.kasa enforces
-   * chronological order per RRO account, not across accounts.
+   * Discovers all distinct (bank, merchant_id, with_vat) streams that have pending/processing
+   * jobs and processes each one independently in parallel.
+   *
+   * This means: a failure or backoff in one merchant's queue never blocks another merchant's
+   * receipts — even if the bank or terminal has changed since the old jobs were enqueued.
    */
   @Cron(CronExpression.EVERY_10_SECONDS)
   async handleQueue() {
     if (this.isRunning) return;
     this.isRunning = true;
     try {
-      await Promise.allSettled([
-        this.fiscalService.processQueue(false),
-        this.fiscalService.processQueue(true),
-      ]);
+      const activeQueues = await this.fiscalService.getActiveQueues();
+      if (!activeQueues.length) return;
+
+      await Promise.allSettled(
+        activeQueues.map(q =>
+          this.fiscalService.processQueue(q.bank, q.merchant_id, q.with_vat),
+        ),
+      );
     } catch (error) {
       this.logger.error(
         `Unexpected queue processor error: ${error instanceof Error ? error.message : error}`,

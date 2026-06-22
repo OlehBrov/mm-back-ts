@@ -86,6 +86,9 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
   private createSocket(): net.Socket {
     const socket = new net.Socket();
 
+    // TCP-level keep-alive: detects silent drops that produce no error/close events
+    socket.setKeepAlive(true, 15_000);
+
     socket.on('connect', () => {
       this.logger.log(`Connected to PrivatBank terminal at ${this.host}:${this.port}`);
       this.clearReconnect();
