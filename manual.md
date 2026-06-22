@@ -3,6 +3,8 @@
 ## Зміст
 1. [Налаштування Windows (перший запуск)](#налаштування-windows)
 2. [API Endpoints](#api-endpoints)
+3. [Налаштування фіскальних токенів](#фіскальні-токени)
+4. [Скрінсейвер](#скрінсейвер)
 
 ---
 
@@ -485,7 +487,39 @@ Authorization: Bearer <token>
 ---
 
 #### `GET /api/config/merchant`
-Отримати налаштування мерчантів терміналу.
+Зчитати список мерчантів з терміналу, зберегти в БД і повернути поточні налаштування.
+
+> При одному мерчанті (немає окремого VAT) `vatExciseMerchant` буде `null`, `isSingleMerchant` = `true`.
+
+**Response 200:**
+```json
+{
+  "status": "success",
+  "defaultMerchant": "1",
+  "vatExciseMerchant": null,
+  "useVATbyDefault": false,
+  "isSingleMerchant": true,
+  "noVATTaxGroup": 7,
+  "VATTaxGroup": 1,
+  "VATExciseTaxGroup": 3
+}
+```
+
+---
+
+#### `GET /api/config/terminal-merchants`
+Отримати сирий список мерчантів безпосередньо з терміналу (без запису в БД).
+
+**Response 200:**
+```json
+{
+  "merchants": [
+    { "merchantId": "1", "merchantName": "ФОП Іваненко. Оплата" }
+  ]
+}
+```
+
+> Мерчанти з назвою «Повернення» фільтруються автоматично — вони не є окремими мерчантами, а функцією повернення.
 
 ---
 
@@ -633,6 +667,67 @@ Authorization: Bearer <token>
 
 ---
 
+### Fiscal — `/api/fiscal`
+
+#### `GET /api/fiscal/tokens`
+Повернути поточні токени Вчасно.Каса (з БД або env-fallback) та перевірити їх статус через API Вчасно (task 18 — «Статус пРРО»).
+
+**Response 200:**
+```json
+{
+  "token": "q8FYOPDa...",
+  "tokenVat": "5dq5ej0F...",
+  "tokenStatus": {
+    "valid": true,
+    "res": 0,
+    "errortxt": "",
+    "fisid": "3000012345",
+    "isFis": 1,
+    "shift_status": 1,
+    "online_status": 0
+  },
+  "tokenVatStatus": {
+    "valid": true,
+    "res": 0,
+    "errortxt": "",
+    "fisid": "3000012346",
+    "isFis": 1,
+    "shift_status": 0,
+    "online_status": 0
+  }
+}
+```
+
+| Поле `tokenStatus` | Значення |
+|---|---|
+| `valid` | `true` — токен прийнятий Вчасно |
+| `isFis` | `1` — фіскальна каса, `0` — тестова |
+| `shift_status` | `0` — зміну закрито, `1` — відкрито, `2` — заблоковано |
+| `online_status` | `0` — online, `1` — offline, `2` — заблоковано |
+
+> Якщо `tokenVat` не заданий або збігається з `token`, `tokenVatStatus` буде `null`.
+
+---
+
+#### `POST /api/fiscal/tokens`
+Зберегти токени в БД і одразу перевірити їх.
+
+**Body:**
+```json
+{
+  "token": "q8FYOPDa...",
+  "tokenVat": "5dq5ej0F..."
+}
+```
+
+> `tokenVat` — необов'язкове. Якщо магазин має один РРО (без ПДВ), передавати не потрібно.
+
+**Response 200:** аналогічна структура до `GET /api/fiscal/tokens` (без полів `token`/`tokenVat`, тільки статуси перевірки).
+
+> Після збереження токен-кеш скидається, всі наступні фіскальні запити використовуватимуть нові токени.
+
+---
+
 ### WebSocket Events
 
 Підключення: `ws://localhost:6006` (або через nginx proxy на порту 80).
@@ -646,3 +741,177 @@ Authorization: Bearer <token>
 | Подія (клієнт → сервер) | Опис |
 |---|---|
 | `idle-status` | Кіоск переходить в idle: `true \| false` |
+
+---
+
+## Фіскальні токени
+
+Токени Вчасно.Каса зберігаються в таблиці `Store` (колонки `fiscal_token`, `fiscal_token_vat`).  
+При першому запуску, якщо токени в БД відсутні, використовуються значення `AUTH_MERCH_TOKEN` та `AUTH_MERCH_TOKEN_VAT` з `.env` як fallback.
+
+### Як додати / оновити токени
+
+1. Відкрити кабінет [kasa.vchasno.ua](https://kasa.vchasno.ua) → **Налаштування** → конкретна каса → **Налаштувати касу**
+2. Скопіювати токен каси
+3. Надіслати POST-запит:
+
+```bash
+curl -X POST http://localhost:6006/api/fiscal/tokens \
+  -H "Content-Type: application/json" \
+  -d '{"token": "ВАШТОКЕН"}'
+```
+
+Або через PowerShell:
+```powershell
+Invoke-RestMethod -Uri 'http://localhost:6006/api/fiscal/tokens' `
+  -Method Post -ContentType 'application/json' `
+  -Body '{"token":"ВАШТОКЕН"}'
+```
+
+У відповіді буде `tokenStatus.valid: true` якщо токен прийнятий Вчасно.
+
+### Перевірка поточних токенів
+
+```bash
+curl http://localhost:6006/api/fiscal/tokens
+```
+
+### Два мерчанти (з ПДВ і без)
+
+Якщо у магазину два РРО (один для звичайних товарів, інший для товарів з ПДВ/акцизом):
+
+```json
+{
+  "token": "ТОКЕН_БЕЗ_ПДВ",
+  "tokenVat": "ТОКЕН_З_ПДВ"
+}
+```
+
+Система автоматично використовує потрібний токен залежно від групи товарів у чеку.
+
+### На старті застосунку
+
+При кожному запуску бекенд автоматично перевіряє обидва токени через Вчасно API (task 18 — «Статус пРРО»).  
+Результат виводиться в лог:
+```
+LOG [FiscalService] Fiscal token check: valid=true, fisid=3000012345, isFis=1, shift=1, online=0
+```
+
+---
+
+## Скрінсейвер
+
+Скрінсейвер відображається на екрані кіоску коли кіоск переходить у режим очікування.  
+Підтримуються зображення (JPG, PNG, WEBP, GIF) та відео (MP4, WEBM, MOV).  
+Максимальний розмір файлу: **200 MB**.
+
+Файли зберігаються в директорії `SCREENSAVER_DIR` (`.env`), за замовчуванням `C:/mm-images/screensavers`.
+
+### Кроки для встановлення скрінсейвера
+
+#### 1. Завантажити файл
+
+```bash
+curl -X POST http://localhost:6006/api/screensaver/upload \
+  -F "file=@/path/to/video.mp4"
+```
+
+PowerShell:
+```powershell
+$form = @{ file = Get-Item 'C:\path\to\video.mp4' }
+Invoke-RestMethod -Uri 'http://localhost:6006/api/screensaver/upload' -Method Post -Form $form
+```
+
+**Response 200:**
+```json
+{ "filename": "video.mp4", "size": 15728640 }
+```
+
+#### 2. Переглянути завантажені файли
+
+```bash
+curl http://localhost:6006/api/screensaver/files
+```
+
+**Response 200:**
+```json
+{
+  "files": [
+    { "filename": "promo.jpg",  "type": "image", "url": "http://localhost:6006/api/screensaver-file/promo.jpg" },
+    { "filename": "video.mp4",  "type": "video", "url": "http://localhost:6006/api/screensaver-file/video.mp4" }
+  ]
+}
+```
+
+#### 3. Активувати скрінсейвер
+
+```bash
+curl -X PUT http://localhost:6006/api/screensaver/active \
+  -H "Content-Type: application/json" \
+  -d '{"filename": "video.mp4"}'
+```
+
+PowerShell:
+```powershell
+Invoke-RestMethod -Uri 'http://localhost:6006/api/screensaver/active' `
+  -Method Put -ContentType 'application/json' `
+  -Body '{"filename":"video.mp4"}'
+```
+
+**Response 200:**
+```json
+{ "filename": "video.mp4" }
+```
+
+Кіоск підхопить новий скрінсейвер при наступному переході в idle — перезапуск не потрібен.
+
+#### 4. Деактивувати скрінсейвер
+
+```bash
+curl -X PUT http://localhost:6006/api/screensaver/active \
+  -H "Content-Type: application/json" \
+  -d '{"filename": null}'
+```
+
+#### 5. Видалити файл
+
+```bash
+curl -X DELETE http://localhost:6006/api/screensaver/video.mp4
+```
+
+> Якщо видалений файл був активним — скрінсейвер автоматично деактивується.
+
+### Отримати активний скрінсейвер
+
+```bash
+curl http://localhost:6006/api/screensaver/active
+```
+
+**Response 200 (активний):**
+```json
+{ "filename": "video.mp4", "type": "video", "url": "http://localhost:6006/api/screensaver-file/video.mp4" }
+```
+
+**Response 200 (не встановлено):**
+```json
+{ "filename": null, "type": null, "url": null }
+```
+
+### Перегляд файлу напряму
+
+```
+GET /api/screensaver-file/:filename
+```
+
+Приклад: `http://localhost:6006/api/screensaver-file/video.mp4`
+
+Підтримує `Range`-запити (відео відтворюється в браузері без повного завантаження).
+
+### Підтримувані формати
+
+| Тип | Формати |
+|---|---|
+| Зображення | `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` |
+| Відео | `.mp4`, `.webm`, `.mov` |
+
+> Відео відтворюється автоматично (autoplay, loop, без звуку). Рекомендований формат — **MP4 (H.264)** для максимальної сумісності.
