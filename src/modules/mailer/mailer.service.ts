@@ -44,21 +44,28 @@ export class MailerService {
     await this.send(subject, html);
   }
 
-  private async send(subject: string, html: string): Promise<void> {
-    if (!this.enabled) return;
+  /** Send to a dynamic recipient (e.g. feedback_email from DB). */
+  async sendTo(to: string, subject: string, html: string): Promise<void> {
+    if (!to) return;
+    await this.send(subject, html, to);
+  }
+
+  private async send(subject: string, html: string, toOverride?: string): Promise<void> {
+    const recipient = toOverride ?? this.to;
+    if (!recipient) return;
+    if (!toOverride && !this.enabled) return;
 
     try {
       await this.transporter.sendMail({
         from: this.from,
-        to: this.to,
+        to: recipient,
         subject,
         html,
       });
-      this.logger.log(`Alert email sent: "${subject}"`);
+      this.logger.log(`Email sent to <${recipient}>: "${subject}"`);
     } catch (err) {
-      // Never let email failure crash the main flow
       this.logger.error(
-        `Failed to send alert email "${subject}": ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to send email "${subject}" to <${recipient}>: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

@@ -190,9 +190,18 @@ model Store {
   store_address                  String?        @db.NVarChar(100)
   active_bank                    String?        @db.VarChar(20)
   alert_email                    String?        @db.NVarChar(255)
+  support_email                  String?        @db.NVarChar(255)
+  feedback_email                 String?        @db.NVarChar(255)
+  last_feedback_report_date      DateTime?      @db.Date
   screensaver                    String?        @db.VarChar(255)
   Categories                     Categories?    @relation(fields: [store_sale_product_category], references: [cat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Categories_FK")
   Subcategories                  Subcategories? @relation(fields: [store_sale_product_subcategory], references: [subcat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Subcategories_FK")
+}
+
+model Feedbacks {
+  id         Int      @id(map: "Feedbacks_PK") @default(autoincrement())
+  rating     Int      @db.TinyInt
+  created_at DateTime @default(now()) @db.DateTime2
 }
 
 model TerminalConfig {

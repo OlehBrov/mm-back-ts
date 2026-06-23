@@ -15,6 +15,7 @@ import { StaticModule } from './modules/static/static.module';
 import { MailerModule } from './modules/mailer/mailer.module';
 import { ScreensaverModule } from './modules/screensaver/screensaver.module';
 import { SetupModule } from './modules/setup/setup.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -38,6 +39,7 @@ import configuration from './config/configuration';
     StaticModule,
     ScreensaverModule,
     SetupModule,
+    FeedbackModule,
   ],
 })
 export class AppModule {}

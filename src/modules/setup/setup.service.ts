@@ -69,6 +69,8 @@ export class SetupService {
           store_address: true,
           active_bank: true,
           alert_email: true,
+          support_email: true,
+          feedback_email: true,
           default_merchant: true,
           VAT_excise_merchant: true,
           is_single_merchant: true,
@@ -89,12 +91,16 @@ export class SetupService {
         store_address: dto.store_address,
         active_bank: dto.active_bank,
         alert_email: dto.alert_email,
+        support_email: dto.support_email,
+        feedback_email: dto.feedback_email,
       },
       select: {
         store_name: true,
         store_address: true,
         active_bank: true,
         alert_email: true,
+        support_email: true,
+        feedback_email: true,
       },
     });
   }

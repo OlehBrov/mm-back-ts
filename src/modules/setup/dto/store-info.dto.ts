@@ -18,4 +18,12 @@ export class UpdateStoreInfoDto {
   @IsOptional()
   @IsEmail()
   alert_email?: string | null;
+
+  @IsOptional()
+  @IsEmail()
+  support_email?: string | null;
+
+  @IsOptional()
+  @IsEmail()
+  feedback_email?: string | null;
 }
