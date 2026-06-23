@@ -189,11 +189,26 @@ model Store {
   VAT_merchant_name              String?        @db.NVarChar(100)
   store_address                  String?        @db.NVarChar(100)
   active_bank                    String?        @db.VarChar(20)
-  fiscal_token                   String?        @db.NVarChar(255)
-  fiscal_token_vat               String?        @db.NVarChar(255)
+  alert_email                    String?        @db.NVarChar(255)
   screensaver                    String?        @db.VarChar(255)
   Categories                     Categories?    @relation(fields: [store_sale_product_category], references: [cat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Categories_FK")
   Subcategories                  Subcategories? @relation(fields: [store_sale_product_subcategory], references: [subcat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Subcategories_FK")
+}
+
+model TerminalConfig {
+  id   Int     @id(map: "TerminalConfig_PK") @default(autoincrement())
+  bank String  @unique(map: "TerminalConfig_UNIQUE") @db.NVarChar(20)
+  name String? @db.NVarChar(100)
+  host String? @db.VarChar(100)
+  port Int?
+}
+
+model FiscalConfig {
+  id            Int     @id(map: "FiscalConfig_PK") @default(autoincrement())
+  merchant_id   String  @unique(map: "FiscalConfig_UNIQUE") @db.VarChar(100)
+  merchant_name String? @db.NVarChar(255)
+  merchant_code String? @db.VarChar(20)
+  fiscal_token  String? @db.NVarChar(255)
 }
 
 model Subcategories {

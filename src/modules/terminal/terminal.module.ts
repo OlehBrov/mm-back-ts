@@ -34,6 +34,7 @@ import { PrismaService } from '../../database/prisma.service';
         return active;
       },
       inject: [ConfigService, EventEmitter2, PrismaService, PrivatBankTerminalService, MonoBankTerminalService],
+      // Note: PrismaService is also injected into PrivatBankTerminalService directly (for TerminalConfig lookup)
     },
     TerminalService,
   ],

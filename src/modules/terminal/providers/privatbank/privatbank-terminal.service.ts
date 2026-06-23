@@ -15,6 +15,7 @@ import {
   parseRawJsonBuffer,
 } from './privat-protocol.utils';
 import { TERMINAL_STATUS_EVENT } from '../../constants';
+import { PrismaService } from '../../../../database/prisma.service';
 
 // PrivatBank ECR JSON protocol:
 //   - Framing:     NULL-terminated JSON (0x00 delimiter), NOT STX/LRC
@@ -48,8 +49,8 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
   // Set to true by terminal.module factory before onModuleInit fires.
   shouldConnect = false;
 
-  private readonly host: string;
-  private readonly port: number;
+  private host: string;
+  private port: number;
   private readonly paymentTimeoutMs: number;
   private readonly connectionTimeoutMs: number;
   private readonly reconnectIntervalMs: number;
@@ -57,6 +58,7 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
   constructor(
     private readonly config: ConfigService,
     private readonly events: EventEmitter2,
+    private readonly prisma: PrismaService,
   ) {
     this.host = config.get<string>('terminal.host') ?? '127.0.0.1';
     this.port = config.get<number>('terminal.privatbankPort') ?? 2000;
@@ -65,9 +67,14 @@ export class PrivatBankTerminalService implements ITerminalProvider, OnModuleIni
     this.reconnectIntervalMs = config.get<number>('terminal.reconnectIntervalMs') ?? 30000;
   }
 
-  onModuleInit() {
+  async onModuleInit() {
     if (!this.shouldConnect || this.hasInitialized) return;
     this.hasInitialized = true;
+
+    const dbConfig = await this.prisma.terminalConfig.findUnique({ where: { bank: 'privatbank' } });
+    if (dbConfig?.host) this.host = dbConfig.host;
+    if (dbConfig?.port) this.port = dbConfig.port;
+
     this.client = this.createSocket();
     this.client.connect(this.port, this.host);
   }
