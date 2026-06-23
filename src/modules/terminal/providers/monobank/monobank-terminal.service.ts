@@ -286,12 +286,12 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
     }
   }
 
-  async ping(): Promise<void> {
+  async ping(timeoutMs = this.connectionTimeoutMs): Promise<void> {
     try {
       await this.request(
         { method: 'PingDevice' },
         (r) => r['method'] === 'PingDevice',
-        this.connectionTimeoutMs,
+        timeoutMs,
       );
       this.setStatus('online');
     } catch {
@@ -444,7 +444,10 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
     // payment flow and could cause a timeout that flips status to 'offline'.
     if (this.saleInProgress) return this.terminalStatus === 'online';
     try {
-      await this.ping();
+      // Use paymentTimeoutMs (not connectionTimeoutMs) — terminal may be in sleep/
+      // power-save mode and need up to ~15 s to wake before responding to PingDevice.
+      // Same reasoning as for Purchase: see sendPayment() comment.
+      await this.ping(this.paymentTimeoutMs);
       return this.terminalStatus === 'online';
     } catch {
       return false;

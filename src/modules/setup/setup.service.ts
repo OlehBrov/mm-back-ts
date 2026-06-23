@@ -94,19 +94,7 @@ export class SetupService {
       };
     }
 
-    // Retry up to 3 times — terminal may be in sleep/power-save mode and need
-    // a few seconds to wake up before it can respond to PingDevice.
-    const MAX_ATTEMPTS = 3;
-    const RETRY_DELAY_MS = 3000;
-    let online = false;
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      online = await this.terminal.checkConnection();
-      if (online) break;
-      if (i < MAX_ATTEMPTS - 1) {
-        await new Promise<void>((r) => setTimeout(r, RETRY_DELAY_MS));
-      }
-    }
-
+    const online = await this.terminal.checkConnection();
     if (!online) {
       return { online: false, merchants: [], terminalConfig };
     }
