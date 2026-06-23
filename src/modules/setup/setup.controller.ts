@@ -9,6 +9,12 @@ import { AssignMerchantsDto } from './dto/assign-merchants.dto';
 export class SetupController {
   constructor(private readonly setupService: SetupService) {}
 
+  /** Quick readiness check — returns { ready, missing[] }. Called by kiosk on startup. */
+  @Get('ready')
+  checkReadiness() {
+    return this.setupService.checkReadiness();
+  }
+
   /** Full config snapshot: store info + all terminal configs + all fiscal configs */
   @Get()
   getSetup() {

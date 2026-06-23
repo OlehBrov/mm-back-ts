@@ -21,6 +21,45 @@ export class SetupService {
     this.storeAuthId = config.get<string>('store.authId') ?? '';
   }
 
+  async checkReadiness(): Promise<{ ready: boolean; missing: string[] }> {
+    const [store, terminalConfigs, fiscalConfigs] = await Promise.all([
+      this.prisma.store.findFirst({
+        where: { auth_id: this.storeAuthId },
+        select: {
+          active_bank: true,
+          default_merchant: true,
+          VAT_excise_merchant: true,
+        },
+      }),
+      this.prisma.terminalConfig.findMany(),
+      this.prisma.fiscalConfig.findMany(),
+    ]);
+
+    const missing: string[] = [];
+
+    if (!store?.active_bank) {
+      missing.push('Не обрано активний банк');
+    } else {
+      const tc = terminalConfigs.find((t) => t.bank === store.active_bank);
+      if (!tc?.host) missing.push(`IP-адресу термінала ${store.active_bank} не вказано`);
+      if (!tc?.port) missing.push(`Порт термінала ${store.active_bank} не вказано`);
+    }
+
+    if (!store?.default_merchant) {
+      missing.push('Основного мерчанта не призначено');
+    } else {
+      const fc = fiscalConfigs.find((f) => f.merchant_id === store.default_merchant);
+      if (!fc?.fiscal_token) missing.push('Токен Вчасно Каса для основного мерчанта відсутній');
+    }
+
+    if (store?.VAT_excise_merchant) {
+      const fc = fiscalConfigs.find((f) => f.merchant_id === store.VAT_excise_merchant);
+      if (!fc?.fiscal_token) missing.push('Токен Вчасно Каса для ПДВ-мерчанта відсутній');
+    }
+
+    return { ready: missing.length === 0, missing };
+  }
+
   async getSetup() {
     const [store, terminalConfigs, fiscalConfigs] = await Promise.all([
       this.prisma.store.findFirst({
