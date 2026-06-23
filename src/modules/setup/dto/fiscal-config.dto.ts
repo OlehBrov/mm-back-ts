@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class UpsertFiscalConfigDto {
   @IsOptional()
@@ -15,4 +15,10 @@ export class UpsertFiscalConfigDto {
   @IsString()
   @MaxLength(255)
   fiscal_token?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  taxgrp?: number | null;
 }

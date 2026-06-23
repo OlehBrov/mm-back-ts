@@ -209,6 +209,7 @@ model FiscalConfig {
   merchant_name String? @db.NVarChar(255)
   merchant_code String? @db.VarChar(20)
   fiscal_token  String? @db.NVarChar(255)
+  taxgrp        Int?
 }
 
 model Subcategories {
