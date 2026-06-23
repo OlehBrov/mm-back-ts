@@ -107,7 +107,10 @@ export class SetupService {
     }
   }
 
-  async assignMerchants(defaultMerchant: string, vatMerchant: string | null): Promise<void> {
+  async assignMerchants(
+    defaultMerchant: string,
+    vatMerchant: string | null,
+  ): Promise<{ ok: boolean; default_merchant: string; vat_merchant: string | null }> {
     const isSingle = vatMerchant === null;
 
     await this.prisma.store.updateMany({
@@ -118,7 +121,6 @@ export class SetupService {
       },
     });
 
-    // Ensure FiscalConfig placeholder records exist so the admin can fill them in
     await this.prisma.fiscalConfig.upsert({
       where: { merchant_id: defaultMerchant },
       create: { merchant_id: defaultMerchant },
@@ -132,6 +134,8 @@ export class SetupService {
         update: {},
       });
     }
+
+    return { ok: true, default_merchant: defaultMerchant, vat_merchant: vatMerchant };
   }
 
   async upsertFiscalConfig(
