@@ -72,6 +72,7 @@ export class SetupService {
     online: boolean;
     merchants: MerchantInfo[];
     error?: string;
+    terminalConfig: { host: string | null; port: number | null } | null;
   }> {
     // The server only has one active terminal running (set at startup).
     // We compare the requested bank to the active_bank in DB.
@@ -82,24 +83,27 @@ export class SetupService {
     const activeBank =
       store?.active_bank ?? this.config.get<string>('terminal.provider') ?? 'privatbank';
 
+    const terminalConfig = await this.prisma.terminalConfig.findUnique({ where: { bank } });
+
     if (bank !== activeBank) {
       return {
         online: false,
         merchants: [],
+        terminalConfig,
         error: `Термінал "${bank}" не активний на сервері. Оберіть його як активний, збережіть і перезапустіть сервер.`,
       };
     }
 
     const online = await this.terminal.checkConnection();
     if (!online) {
-      return { online: false, merchants: [] };
+      return { online: false, merchants: [], terminalConfig };
     }
 
     try {
       const merchants = await this.terminal.getMerchants();
-      return { online: true, merchants };
+      return { online: true, merchants, terminalConfig };
     } catch {
-      return { online: true, merchants: [] };
+      return { online: true, merchants: [], terminalConfig };
     }
   }
 
