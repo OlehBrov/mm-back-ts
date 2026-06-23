@@ -3,6 +3,7 @@ import { SetupService } from './setup.service';
 import { UpdateStoreInfoDto } from './dto/store-info.dto';
 import { UpsertTerminalConfigDto } from './dto/terminal-config.dto';
 import { UpsertFiscalConfigDto } from './dto/fiscal-config.dto';
+import { AssignMerchantsDto } from './dto/assign-merchants.dto';
 
 @Controller('setup')
 export class SetupController {
@@ -29,7 +30,27 @@ export class SetupController {
     return this.setupService.upsertTerminalConfig(bank, dto);
   }
 
-  /** Upsert fiscal config for a merchant (linked to Store.default_merchant or VAT_excise_merchant) */
+  /**
+   * Check if the terminal for the given bank is reachable and get its merchants.
+   * Only works if the requested bank matches the currently running active terminal.
+   */
+  @Post('terminal/:bank/check')
+  @HttpCode(200)
+  checkTerminal(@Param('bank') bank: string) {
+    return this.setupService.checkTerminal(bank);
+  }
+
+  /**
+   * Assign merchants to roles (no-VAT / VAT) in Store.
+   * Also creates placeholder FiscalConfig records for each assigned merchant.
+   */
+  @Post('assign-merchants')
+  @HttpCode(200)
+  assignMerchants(@Body() dto: AssignMerchantsDto) {
+    return this.setupService.assignMerchants(dto.default_merchant, dto.vat_merchant ?? null);
+  }
+
+  /** Upsert fiscal config for a merchant */
   @Put('fiscal/:merchantId')
   upsertFiscalConfig(
     @Param('merchantId') merchantId: string,

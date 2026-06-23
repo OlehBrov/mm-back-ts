@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { FiscalService, VchasnoTokenStatus } from '../fiscal/fiscal.service';
+import { TerminalService } from '../terminal/terminal.service';
+import { MerchantInfo } from '../terminal/interfaces/terminal-provider.interface';
 import { UpdateStoreInfoDto } from './dto/store-info.dto';
 import { UpsertTerminalConfigDto } from './dto/terminal-config.dto';
 import { UpsertFiscalConfigDto } from './dto/fiscal-config.dto';
@@ -14,6 +16,7 @@ export class SetupService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly fiscal: FiscalService,
+    private readonly terminal: TerminalService,
   ) {
     this.storeAuthId = config.get<string>('store.authId') ?? '';
   }
@@ -63,6 +66,68 @@ export class SetupService {
       create: { bank, ...dto },
       update: { ...dto },
     });
+  }
+
+  async checkTerminal(bank: string): Promise<{
+    online: boolean;
+    merchants: MerchantInfo[];
+    error?: string;
+  }> {
+    // The server only has one active terminal running (set at startup).
+    // We compare the requested bank to the active_bank in DB.
+    const store = await this.prisma.store.findFirst({
+      where: { auth_id: this.storeAuthId },
+      select: { active_bank: true },
+    });
+    const activeBank =
+      store?.active_bank ?? this.config.get<string>('terminal.provider') ?? 'privatbank';
+
+    if (bank !== activeBank) {
+      return {
+        online: false,
+        merchants: [],
+        error: `Термінал "${bank}" не активний на сервері. Оберіть його як активний, збережіть і перезапустіть сервер.`,
+      };
+    }
+
+    const online = await this.terminal.checkConnection();
+    if (!online) {
+      return { online: false, merchants: [] };
+    }
+
+    try {
+      const merchants = await this.terminal.getMerchants();
+      return { online: true, merchants };
+    } catch {
+      return { online: true, merchants: [] };
+    }
+  }
+
+  async assignMerchants(defaultMerchant: string, vatMerchant: string | null): Promise<void> {
+    const isSingle = vatMerchant === null;
+
+    await this.prisma.store.updateMany({
+      data: {
+        default_merchant: defaultMerchant,
+        VAT_excise_merchant: vatMerchant,
+        is_single_merchant: isSingle,
+      },
+    });
+
+    // Ensure FiscalConfig placeholder records exist so the admin can fill them in
+    await this.prisma.fiscalConfig.upsert({
+      where: { merchant_id: defaultMerchant },
+      create: { merchant_id: defaultMerchant },
+      update: {},
+    });
+
+    if (vatMerchant) {
+      await this.prisma.fiscalConfig.upsert({
+        where: { merchant_id: vatMerchant },
+        create: { merchant_id: vatMerchant },
+        update: {},
+      });
+    }
   }
 
   async upsertFiscalConfig(
