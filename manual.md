@@ -2,10 +2,23 @@
 
 ## Зміст
 1. [Налаштування Windows (перший запуск)](#налаштування-windows)
-2. [Початкові налаштування БД (таблиця Store)](#початкові-налаштування-бд)
-3. [API Endpoints](#api-endpoints)
-4. [Налаштування фіскальних токенів](#фіскальні-токени)
-5. [Скрінсейвер](#скрінсейвер)
+2. [Змінні оточення (.env)](#змінні-оточення)
+3. [Таблиці БД](#таблиці-бд)
+4. [Послідовність першого налаштування](#перше-налаштування)
+5. [API Endpoints](#api-endpoints)
+   - [Auth](#auth--apiauthstore)
+   - [Setup (конфіг кіоску)](#setup--apisetup)
+   - [Products](#products--apiproducts)
+   - [Cart](#cart--apicart)
+   - [Config](#config--apiconfig)
+   - [Fiscal](#fiscal--apifiscal)
+   - [Admin](#admin--apiadminstore)
+   - [Sales](#sales--apisales)
+   - [Finance](#finance--apifinance)
+   - [Kiosk sync](#kiosk--apiadminkiosk)
+   - [Screensaver](#screensaver--apiscreensaver)
+   - [Static files](#static-files)
+   - [WebSocket Events](#websocket-events)
 
 ---
 
@@ -13,40 +26,23 @@
 
 ### 1. MS SQL Server — Mixed Mode Authentication
 
-Після встановлення SQL Server потрібно увімкнути змішану автентифікацію (SQL + Windows), якщо вона не увімкнена:
-
 1. Відкрити **SQL Server Management Studio (SSMS)**
-2. Підключитися як Windows Administrator
-3. Правий клік на сервері → **Properties** → **Security**
-4. Вибрати **SQL Server and Windows Authentication mode**
-5. Натиснути OK
-6. Перезапустити SQL Server:
-   ```
-   Правий клік на сервері → Restart
-   ```
+2. Правий клік на сервері → **Properties** → **Security**
+3. Вибрати **SQL Server and Windows Authentication mode** → OK
+4. Перезапустити SQL Server: правий клік → **Restart**
 
 ---
 
 ### 2. Створення логіна mm_user
 
-Виконати в SSMS (підключившись як sa або Windows Admin):
-
 ```sql
--- Створити логін
 CREATE LOGIN mm_user WITH PASSWORD = 'mmNextRetail_TS-2026';
-
--- Переключитися на базу original
 USE original;
-
--- Створити користувача в базі
 CREATE USER mm_user FOR LOGIN mm_user;
-
--- Надати повні права на базу
 ALTER ROLE db_owner ADD MEMBER mm_user;
 ```
 
-> `db_owner` потрібний для CREATE TABLE при першому запуску міграцій.
-> Після першого запуску можна понизити до `db_datareader` + `db_datawriter` + `db_ddladmin`.
+> `db_owner` потрібний для `CREATE TABLE` при першому запуску міграцій.
 
 ---
 
@@ -54,21 +50,17 @@ ALTER ROLE db_owner ADD MEMBER mm_user;
 
 1. Завантажити **Docker Desktop for Windows**: https://www.docker.com/products/docker-desktop/
 2. Встановити, перезавантажити ПК
-3. Відкрити Docker Desktop → **Settings** → увімкнути **Start Docker Desktop when you log in**
+3. Docker Desktop → **Settings** → увімкнути **Start Docker Desktop when you log in**
 
 ---
 
 ### 4. Клонування репозиторіїв
 
-Відкрити Git Bash або PowerShell:
-
 ```bash
 cd C:/git
-
 git clone https://github.com/OlehBrov/mm-back-ts.git mm-back-nest
 git clone https://github.com/OlehBrov/mm-front-ts.git mm-front-ts
 git clone https://github.com/OlehBrov/mm-deploy.git mm-deploy
-
 mkdir C:/git/mm-images
 ```
 
@@ -87,139 +79,192 @@ docker compose ps
 docker compose logs backend --tail=50
 ```
 
-При успішному старті в логах бекенду будуть рядки:
+При успішному старті в логах будуть рядки:
 ```
 LOG [Migrations] Applied: 001_add_fiscal_queue.sql
-LOG [Migrations] Applied: 002_add_active_bank.sql
 ...
-LOG [NestFactory] Starting Nest application...
 LOG [Application] Application running on port 6006
 ```
 
 ---
 
-### 6. Налаштування пароля для фронтенду
+### 6. Пароль для фронтенду
 
-Пароль для автологіна фронту встановлюється в `docker-compose.yml` (поле `VITE_STORE_PASSWORD`).
-Відповідний хеш у БД оновлюється вручну через SSMS:
-
-```bash
-# Згенерувати bcrypt-хеш нового пароля
-docker exec mm-deploy-backend-1 node -e "const b=require('bcryptjs'); b.hash('НОВИЙ_ПАРОЛЬ',10).then(h=>console.log(h))"
-```
-
-```sql
--- Оновити хеш в БД
-UPDATE dbo.Store
-SET password = '$2b$10$...(хеш з попередньої команди)...'
-WHERE auth_id = '998877';
-```
-
----
-
-### 7. Автозапуск Chrome (kiosk режим)
-
-Налаштувати **Task Scheduler**:
-
-- `Win+R` → `taskschd.msc` → **Create Task**
-- **General**: Name: `MM Kiosk` / ✅ Run with highest privileges
-- **Triggers**: At log on → Delay task for: **1 minute**
-- **Actions**: Start a program
-  - Program: `powershell.exe`
-  - Arguments: `-ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\git\mm-deploy\start-kiosk.ps1"`
-- **Settings**: If already running → Do not start a new instance
-
-Скрипт `start-kiosk.ps1` чекає поки фронт стане доступним на `http://localhost`, після чого запускає Chrome у кіоск-режимі.
-
----
-
-## Початкові налаштування БД
-
-Всі налаштування кіоску зберігаються в таблиці `dbo.Store`. Один рядок = один кіоск.  
-`auth_id` має збігатися зі значенням `STORE_AUTH_ID` у `.env`.
-
-### Мінімальний рядок для запуску
-
-```sql
-INSERT INTO dbo.Store (auth_id, password, role, active_bank)
-VALUES (
-  '998877',                          -- має збігатись з STORE_AUTH_ID у .env
-  '$2b$10$...',                      -- bcrypt-хеш пароля (генерується окремо, див. нижче)
-  'store',
-  'privatbank'                       -- або 'monobank'
-);
-```
-
-> Решта полів заповнюється через API після першого запуску.
-
----
-
-### Всі поля таблиці Store
-
-| Поле | Тип | Обов'язкове | Опис | Як заповнити |
-|---|---|:---:|---|---|
-| `auth_id` | VARCHAR(50) | ✅ | Унікальний ідентифікатор магазину. Збігається з `STORE_AUTH_ID` в `.env` | Вручну при створенні |
-| `password` | VARCHAR(200) | ✅ | bcrypt-хеш пароля для логіну фронтенду | Вручну (генерація нижче) |
-| `role` | VARCHAR(100) | ✅ | Роль — завжди `'store'` | Вручну при створенні |
-| `active_bank` | VARCHAR(20) | ✅ | Банк-провайдер терміналу: `'privatbank'` або `'monobank'` | Вручну або через API |
-| `default_merchant` | VARCHAR(100) | ✅¹ | ID мерчанта для оплат без ПДВ | `GET /api/config/merchant` |
-| `default_merchant_taxgrp` | INT | ✅¹ | Податкова група для товарів без ПДВ (напр. `7` — не є об'єктом ПДВ) | `POST /api/config/merchant` |
-| `is_single_merchant` | BIT | ✅¹ | `1` якщо один мерчант для всіх товарів | `GET /api/config/merchant` |
-| `fiscal_token` | NVARCHAR(255) | ✅² | Токен каси Вчасно.Каса (без ПДВ) | `POST /api/fiscal/tokens` |
-| `VAT_excise_merchant` | VARCHAR(100) | — | ID мерчанта для товарів з ПДВ/акцизом. `NULL` якщо один мерчант | `GET /api/config/merchant` |
-| `VAT_merchant_taxgrp` | INT | — | Податкова група для товарів з ПДВ 20% | `POST /api/config/merchant` |
-| `VAT_excise_taxgrp` | INT | — | Податкова група для товарів з ПДВ+акциз | `POST /api/config/merchant` |
-| `fiscal_token_vat` | NVARCHAR(255) | — | Токен другої каси Вчасно.Каса (з ПДВ). `NULL` якщо один РРО | `POST /api/fiscal/tokens` |
-| `use_VAT_by_default` | BIT | — | `1` — всі товари йдуть через VAT-мерчанта за замовчуванням | `POST /api/config/merchant` |
-| `store_name` | VARCHAR(100) | — | Назва магазину | Вручну або через Admin API |
-| `store_address` | NVARCHAR(100) | — | Адреса магазину | Вручну або через Admin API |
-| `store_sale_name` | NVARCHAR(100) | — | Назва поточної акції на слайдері | `POST /api/config/store-sale` |
-| `store_sale_title` | NVARCHAR(100) | — | Підзаголовок акції | `POST /api/config/store-sale` |
-| `store_sale_discount` | DECIMAL(10,2) | — | Розмір знижки акції у % | `POST /api/config/store-sale` |
-| `store_sale_product_category` | INT | — | cat_1C_id категорії для акції | `POST /api/config/store-sale` |
-| `store_sale_product_subcategory` | INT | — | subcat_1C_id підкатегорії для акції | `POST /api/config/store-sale` |
-| `screensaver` | VARCHAR(255) | — | Ім'я активного файлу скрінсейвера | `PUT /api/screensaver/active` |
-| `token` | VARCHAR(200) | — | Поточний JWT access token (керується автоматично при login/logout) | Автоматично |
-| `default_merchant_name` | NVARCHAR(100) | — | Назва мерчанта (для відображення) | `GET /api/config/merchant` |
-| `VAT_merchant_name` | NVARCHAR(100) | — | Назва VAT-мерчанта | `GET /api/config/merchant` |
-
-> ¹ Обов'язкове для проведення оплати (`POST /api/cart/sell`).  
-> ² Обов'язкове для фіскалізації чеків. Якщо не задано — fallback на `AUTH_MERCH_TOKEN` з `.env`.
-
----
-
-### Генерація bcrypt-хешу пароля
+Пароль задається в `docker-compose.yml` (`VITE_STORE_PASSWORD`). Хеш оновлюється через SSMS:
 
 ```bash
 docker exec mm-deploy-backend-1 node -e \
-  "const b=require('bcryptjs'); b.hash('ВАШ_ПАРОЛЬ',10).then(h=>console.log(h))"
+  "const b=require('bcryptjs'); b.hash('ПАРОЛЬ',10).then(h=>console.log(h))"
 ```
 
-Або локально (якщо встановлено Node.js):
-```bash
-node -e "const b=require('bcryptjs'); b.hash('ВАШ_ПАРОЛЬ',10).then(h=>console.log(h))"
-```
-
-Отриманий хеш вставити в поле `password`:
 ```sql
 UPDATE dbo.Store SET password = '$2b$10$...' WHERE auth_id = '998877';
 ```
 
 ---
 
-### Послідовність першого налаштування
+### 7. Автозапуск Chrome (kiosk режим)
+
+**Task Scheduler → Create Task:**
+- **General:** `MM Kiosk` / ✅ Run with highest privileges
+- **Triggers:** At log on → Delay: **1 minute**
+- **Actions:** `powershell.exe` / `-ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\git\mm-deploy\start-kiosk.ps1"`
+- **Settings:** If already running → Do not start a new instance
+
+Скрипт `start-kiosk.ps1` чекає на `http://localhost`, потім запускає Chrome у kiosk-режимі.
+
+---
+
+## Змінні оточення
+
+Файл `.env` у корені `mm-back-nest`. При Docker-деплої — задаються в `docker-compose.yml`.
+
+| Змінна | Обов'язкова | Опис |
+|---|:---:|---|
+| `DATABASE_URL` | ✅ | Connection string SQL Server |
+| `STORE_AUTH_ID` | ✅ | `auth_id` рядка Store (напр. `998877`) |
+| `AUTH_TOKEN_SECRET_KEY` | ✅ | Секрет для JWT access token |
+| `REFRESH_TOKEN_SECRET_KEY` | ✅ | Секрет для JWT refresh token |
+| `PORT` | — | HTTP порт (default: `6006`) |
+| `MM_HOST` | — | Публічна адреса бекенду (default: `http://localhost:6006`), використовується для URL файлів |
+| `TERMINAL_PROVIDER` | — | `privatbank` або `monobank` (default: `privatbank`). Перевизначається `active_bank` з БД |
+| `CLIENT_HOST` | — | IP-адреса терміналу |
+| `PRIVATBANK_PORT` | — | Порт PrivatBank (default: `2000`) |
+| `MONOBANK_PORT` | — | Порт MonoBank (default: `3000`) |
+| `TERMINAL_PAYMENT_TIMEOUT_MS` | — | Таймаут очікування відповіді терміналу на оплату в мс (default: `60000`) |
+| `TERMINAL_CONNECTION_TIMEOUT_MS` | — | Таймаут перевірки з'єднання з терміналом в мс (default: `5000`) |
+| `FISCAL_HOST` | — | Базова URL Вчасно.Каса (default: `https://kasa.vchasno.ua`) |
+| `FISCAL_QUEUE_ALERT_THRESHOLD` | — | Кількість чеків у черзі, після якої надсилається email-сповіщення. `0` = вимкнено (default: `0`) |
+| `OVERDUE_FISCALS_EMAIL` | — | Email для відправки звіту з протермінованими чеками щодня о 00:00 |
+| `IMAGE_DIR` | — | Директорія зображень товарів (default: `C:/mm-images`) |
+| `CATEGORY_IMAGE_DIR` | — | Директорія зображень категорій (default: `C:/mm-images/cat-images`) |
+| `SCREENSAVER_DIR` | — | Директорія скрінсейверів (default: `C:/mm-images/screensavers`). Відео — в підпапці `/video` |
+| `MAIL_HOST` | — | SMTP хост. Якщо не задано — email-сповіщення вимкнені |
+| `MAIL_PORT` | — | SMTP порт (default: `587`) |
+| `MAIL_SECURE` | — | `true` для SSL/TLS (default: `false`) |
+| `MAIL_USER` | — | SMTP логін |
+| `MAIL_PASS` | — | SMTP пароль |
+| `MAIL_FROM` | — | Відправник (default: `MicroMarket <noreply@localhost>`) |
+| `MAIL_TO` | — | Отримувач системних сповіщень (помилки фіскалізації) |
+
+---
+
+## Таблиці БД
+
+### Store — конфіг кіоску
+
+Один рядок = один кіоск. Заповнюється через API після першого запуску.
+
+**Мінімальний рядок для запуску:**
+```sql
+INSERT INTO dbo.Store (auth_id, password, role, active_bank)
+VALUES ('998877', '$2b$10$...', 'store', 'monobank');
+```
+
+**Всі поля:**
+
+| Поле | Тип | Опис |
+|---|---|---|
+| `auth_id` | VARCHAR(50) | ✅ Унікальний ID магазину = `STORE_AUTH_ID` в `.env` |
+| `password` | VARCHAR(200) | ✅ bcrypt-хеш пароля |
+| `role` | VARCHAR(100) | ✅ Завжди `'store'` |
+| `active_bank` | VARCHAR(20) | ✅ `'privatbank'` або `'monobank'` |
+| `default_merchant` | VARCHAR(100) | ID мерчанта для оплат без ПДВ |
+| `VAT_excise_merchant` | VARCHAR(100) | ID мерчанта для товарів з ПДВ/акцизом. `NULL` = один мерчант |
+| `is_single_merchant` | BIT | `1` якщо один мерчант для всіх товарів |
+| `use_VAT_by_default` | BIT | `1` — всі товари через VAT-мерчанта за замовчуванням |
+| `default_merchant_taxgrp` | INT | Код податкової групи для товарів без ПДВ |
+| `VAT_merchant_taxgrp` | INT | Код податкової групи для товарів з ПДВ 20% |
+| `VAT_excise_taxgrp` | INT | Код податкової групи для товарів з ПДВ + акциз |
+| `default_merchant_name` | NVARCHAR(100) | Назва мерчанта (для відображення) |
+| `VAT_merchant_name` | NVARCHAR(100) | Назва VAT-мерчанта |
+| `store_name` | VARCHAR(100) | Назва магазину |
+| `store_address` | NVARCHAR(100) | Адреса магазину |
+| `alert_email` | NVARCHAR(255) | Email для системних сповіщень (фіскальні помилки) |
+| `support_email` | NVARCHAR(255) | Email служби підтримки (відображається у кіоску) |
+| `feedback_email` | NVARCHAR(255) | Email для відправки звітів зворотного зв'язку |
+| `last_feedback_report_date` | DATE | Дата останнього відправленого звіту feedback |
+| `screensaver` | VARCHAR(255) | Ім'я активного файлу скрінсейвера (для режимів `static` і `video`) |
+| `screensaver_mode` | VARCHAR(20) | Режим скрінсейвера: `'static'` / `'carousel'` / `'video'` / `NULL` |
+| `screensaver_interval` | INT | Інтервал каруселі в секундах (default: `30`) |
+| `store_sale_name` | NVARCHAR(100) | Назва поточної акції |
+| `store_sale_title` | NVARCHAR(100) | Підзаголовок акції |
+| `store_sale_discount` | DECIMAL(10,2) | Розмір знижки акції у % |
+| `store_sale_product_category` | INT | cat_1C_id категорії для акції |
+| `store_sale_product_subcategory` | INT | subcat_1C_id підкатегорії для акції |
+| `screensaver` | VARCHAR(255) | Ім'я активного файлу скрінсейвера |
+| `token` | VARCHAR(200) | Поточний JWT (керується автоматично) |
+
+---
+
+### FiscalConfig — токени Вчасно.Каса
+
+Один рядок = один мерчант (RRO).
+
+| Поле | Тип | Опис |
+|---|---|---|
+| `merchant_id` | VARCHAR(100) | ✅ Унікальний ID мерчанта (з терміналу) |
+| `merchant_name` | NVARCHAR(255) | Назва ФОП / юрособи |
+| `merchant_code` | VARCHAR(20) | ЄДРПОУ або ІПН |
+| `fiscal_token` | NVARCHAR(255) | Токен каси Вчасно.Каса |
+| `taxgrp` | INT | Код податкової групи (1–10) |
+
+Заповнюється через `PUT /api/setup/fiscal/:merchantId`.
+
+---
+
+### TerminalConfig — конфіг POS-терміналів
+
+Один рядок = один банк-провайдер.
+
+| Поле | Тип | Опис |
+|---|---|---|
+| `bank` | NVARCHAR(20) | ✅ `'privatbank'` або `'monobank'` |
+| `name` | NVARCHAR(100) | Назва терміналу (для відображення) |
+| `host` | VARCHAR(100) | IP-адреса терміналу |
+| `port` | INT | Порт терміналу (PrivatBank: 2000, MonoBank: 3000) |
+| `terminal_id` | VARCHAR(50) | TID — ідентифікатор пристрою, присвоєний банком |
+
+Заповнюється через `PUT /api/setup/terminal/:bank`.
+
+---
+
+### FiscalQueue — черга фіскальних чеків
+
+| Поле | Тип | Опис |
+|---|---|---|
+| `id` | INT | PK |
+| `payload` | NVARCHAR(MAX) | JSON чеку для відправки у Вчасно.Каса |
+| `with_vat` | BIT | `1` = VAT-черга, `0` = стандартна |
+| `bank` | VARCHAR(20) | Банк на момент оплати |
+| `merchant_id` | VARCHAR(100) | ID мерчанта |
+| `status` | VARCHAR(20) | `pending` / `processing` / `completed` / `failed` |
+| `attempts` | INT | Кількість спроб відправки |
+| `max_attempts` | INT | Максимум спроб (default: `10`) |
+| `last_error` | NVARCHAR(500) | Остання помилка |
+| `next_retry_at` | DATETIME | Час наступної спроби (exponential backoff) |
+| `fiscal_response` | NVARCHAR(MAX) | Відповідь Вчасно.Каса при успіху |
+| `created_at` | DATETIME | Час постановки в чергу |
+| `processed_at` | DATETIME | Час успішної обробки |
+
+Щодня о **00:00 (Київ)** незареєстровані чеки попереднього дня переносяться в `OverdueFiscalQueue` і надсилаються на `OVERDUE_FISCALS_EMAIL` у вигляді XLSX-звіту.
+
+---
+
+## Перше налаштування
 
 1. **Вставити рядок Store** — `auth_id`, `password`, `role`, `active_bank`
-2. **Запустити бекенд** — `docker compose up -d`
-3. **Синхронізувати мерчантів** — `GET /api/config/merchant`  
-   Заповнює `default_merchant`, `VAT_excise_merchant`, `is_single_merchant`
-4. **Встановити податкові групи** — `POST /api/config/merchant`  
-   Задати `defaultMerchantTaxgrp` (і `vatExciseMerchantTaxgrp` якщо є VAT)
-5. **Додати токен Вчасно.Каса** — `POST /api/fiscal/tokens`  
-   Заповнює `fiscal_token` (і `fiscal_token_vat` якщо є другий РРО)
-6. **Завантажити товари** — через 1С-синхронізацію або `POST /api/products/add`
+2. **Запустити бекенд** — `docker compose up --build -d`
+3. **Налаштувати кіоск одним запитом** — `POST /api/setup/kiosk-config`
+4. **Або налаштувати покроково:**
+   - `PUT /api/setup/terminal/:bank` — IP, порт, TID терміналу
+   - `POST /api/setup/terminal/:bank/check` — перевірити з'єднання, отримати список мерчантів
+   - `POST /api/setup/assign-merchants` — призначити мерчантів
+   - `PUT /api/setup/fiscal/:merchantId` — токен Вчасно.Каса, taxgrp, ФОП
+5. **Перевірити готовність** — `GET /api/setup/ready` (повертає `{ ready: true }` або список `missing`)
+6. **Завантажити товари** — `POST /api/products/add`
 7. **Завантажити категорії** — `POST /api/config/category` + `POST /api/config/subcategory`
-8. *(Опційно)* **Скрінсейвер** — `POST /api/screensaver/upload` → `PUT /api/screensaver/active`
+8. *(Опційно)* **Скрінсейвер** — `POST /api/screensaver/upload` → `POST /api/screensaver/config`
 9. *(Опційно)* **Акція** — `POST /api/config/store-sale`
 
 ---
@@ -228,7 +273,7 @@ UPDATE dbo.Store SET password = '$2b$10$...' WHERE auth_id = '998877';
 
 Базовий URL: `http://localhost:6006/api`
 
-Всі захищені ендпоінти потребують заголовка:
+Захищені ендпоінти (🔒) потребують заголовка:
 ```
 Authorization: Bearer <token>
 ```
@@ -238,14 +283,10 @@ Authorization: Bearer <token>
 ### Auth — `/api/auth/store`
 
 #### `POST /api/auth/store/login`
-Авторизація магазину.
 
 **Body:**
 ```json
-{
-  "login": "998877",
-  "password": "mm_nextretail"
-}
+{ "login": "998877", "password": "mm_nextretail" }
 ```
 
 **Response 200:**
@@ -263,82 +304,281 @@ Authorization: Bearer <token>
 ---
 
 #### `POST /api/auth/store/refresh-token`
-Оновлення access token.
 
-**Body:**
-```json
-{ "refreshToken": "<jwt>" }
-```
+**Body:** `{ "refreshToken": "<jwt>" }`
 
-**Response 200:**
-```json
-{ "message": "Token refreshed", "token": "<jwt>" }
-```
+**Response 200:** `{ "message": "Token refreshed", "token": "<jwt>" }`
 
 ---
 
 #### `POST /api/auth/store/logout` 🔒
-Вихід (очищає token в БД).
+
+**Response 200:** `{ "message": "Logout success" }`
+
+---
+
+### Setup — `/api/setup`
+
+Ендпоінти налаштування кіоску. Не потребують авторизації (доступні з локальної мережі).
+
+---
+
+#### `GET /api/setup/ready`
+Перевірка готовності до роботи.
 
 **Response 200:**
 ```json
-{ "message": "Logout success" }
+{ "ready": true, "missing": [] }
 ```
+
+або:
+```json
+{
+  "ready": false,
+  "missing": [
+    "IP-адресу термінала monobank не вказано",
+    "Токен Вчасно Каса для основного мерчанта відсутній"
+  ]
+}
+```
+
+---
+
+#### `GET /api/setup`
+Повний знімок конфігу: дані Store + всі TerminalConfig + всі FiscalConfig.
+
+**Response 200:**
+```json
+{
+  "store": {
+    "store_name": "Кіоск #1",
+    "store_address": "вул. Хрещатик, 1",
+    "active_bank": "monobank",
+    "alert_email": "alert@example.com",
+    "support_email": "support@example.com",
+    "feedback_email": "feedback@example.com",
+    "default_merchant": "PQ0000000013166",
+    "VAT_excise_merchant": null,
+    "is_single_merchant": true
+  },
+  "terminalConfigs": [
+    { "id": 1, "bank": "monobank", "name": "MonoBank PAX", "host": "192.168.0.185", "port": 3000, "terminal_id": "12345678" }
+  ],
+  "fiscalConfigs": [
+    { "id": 1, "merchant_id": "PQ0000000013166", "merchant_name": "ФОП Іванов І.І.", "merchant_code": "1234567890", "fiscal_token": "q8FYOPDa...", "taxgrp": 1 }
+  ]
+}
+```
+
+---
+
+#### `GET /api/setup/kiosk-config`
+Структурований конфіг для кіоску — об'єднує Store, TerminalConfig і FiscalConfig.
+
+**Response 200:**
+```json
+{
+  "storeName": "Кіоск #1",
+  "storeAddress": "вул. Хрещатик, 1",
+  "bank": "monobank",
+  "terminal": {
+    "host": "192.168.0.185",
+    "port": 3000,
+    "terminalId": "12345678"
+  },
+  "fiscal": {
+    "noVat": {
+      "merchantId": "PQ0000000013166",
+      "merchantName": "ФОП Іванов І.І.",
+      "token": "q8FYOPDa...",
+      "taxgrp": 1
+    },
+    "vat": null
+  }
+}
+```
+
+`fiscal.vat` — `null` якщо один мерчант.
+
+---
+
+#### `POST /api/setup/kiosk-config`
+Зберегти повний конфіг кіоску одним запитом. Повертає актуальний стан (той самий формат, що GET).
+
+**Body:**
+```json
+{
+  "storeName": "Кіоск #1",
+  "storeAddress": "вул. Хрещатик, 1",
+  "bank": "monobank",
+  "terminal": {
+    "host": "192.168.0.185",
+    "port": 3000,
+    "terminalId": "12345678"
+  },
+  "fiscal": {
+    "noVat": {
+      "merchantId": "PQ0000000013166",
+      "merchantName": "ФОП Іванов І.І.",
+      "token": "q8FYOPDa...",
+      "taxgrp": 1
+    },
+    "vat": {
+      "merchantId": "PQ0000000013167",
+      "merchantName": "ФОП Іванов І.І. (ПДВ)",
+      "token": "5dq5ej0F...",
+      "taxgrp": 2
+    }
+  }
+}
+```
+
+| Поле | Обов'язкове | Опис |
+|---|:---:|---|
+| `bank` | ✅ | Банк-провайдер терміналу |
+| `fiscal.noVat.merchantId` | ✅ | Мерчант без ПДВ |
+| `fiscal.vat` | — | `null` або відсутній → `is_single_merchant = true` |
+| `terminal` | — | Якщо не передано — TerminalConfig не оновлюється |
+| `fiscal.noVat.token` | — | Токен Вчасно.Каса |
+| `fiscal.noVat.taxgrp` | — | Код податкової групи (1–10) |
+| `fiscal.noVat.merchantName` | — | Назва ФОП |
+
+---
+
+#### `PATCH /api/setup/store`
+Оновити базові дані Store.
+
+**Body:**
+```json
+{
+  "store_name": "Кіоск #1",
+  "store_address": "вул. Хрещатик, 1",
+  "active_bank": "monobank",
+  "alert_email": "alert@example.com",
+  "support_email": "support@example.com",
+  "feedback_email": "feedback@example.com"
+}
+```
+
+---
+
+#### `PUT /api/setup/terminal/:bank`
+Зберегти або оновити конфіг терміналу для банку (`monobank` або `privatbank`).
+
+**Body:**
+```json
+{
+  "name": "MonoBank PAX A930",
+  "host": "192.168.0.185",
+  "port": 3000,
+  "terminal_id": "12345678"
+}
+```
+
+---
+
+#### `POST /api/setup/terminal/:bank/check`
+Перевірити з'єднання з терміналом і отримати список мерчантів.
+
+**Response 200:**
+```json
+{
+  "online": true,
+  "merchants": [
+    { "merchantId": "PQ0000000013166", "merchantName": "ФОП Іванов. Оплата" }
+  ],
+  "terminalConfig": { "host": "192.168.0.185", "port": 3000 }
+}
+```
+
+> Мерчанти з назвою «Повернення» фільтруються автоматично.
+
+---
+
+#### `POST /api/setup/assign-merchants`
+Призначити мерчантів ролям (без ПДВ / з ПДВ).
+
+**Body:**
+```json
+{
+  "default_merchant": "PQ0000000013166",
+  "vat_merchant": "PQ0000000013167"
+}
+```
+
+`vat_merchant` — необов'язковий. Якщо `null` / відсутній → `is_single_merchant = true`.
+
+---
+
+#### `PUT /api/setup/fiscal/:merchantId`
+Зберегти конфіг Вчасно.Каса для мерчанта. Автоматично перевіряє токен.
+
+**Body:**
+```json
+{
+  "merchant_name": "ФОП Іванов І.І.",
+  "merchant_code": "1234567890",
+  "fiscal_token": "q8FYOPDa...",
+  "taxgrp": 1
+}
+```
+
+**Response 200:**
+```json
+{
+  "config": { "merchant_id": "PQ...", "fiscal_token": "q8FY...", "taxgrp": 1, ... },
+  "tokenStatus": { "valid": true, "fisid": "3000012345", "shift_status": 1, "online_status": 0, ... }
+}
+```
+
+---
+
+#### `POST /api/setup/fiscal/:merchantId/verify`
+Перевірити поточний токен мерчанта через Вчасно API.
+
+**Response 200:** `{ "valid": true, "fisid": "3000012345", ... }`
+
+---
+
+#### `DELETE /api/setup/fiscal/:merchantId`
+Видалити конфіг фіскалізації для мерчанта.
+
+**Response 200:** `{ "deleted": "PQ0000000013166" }`
 
 ---
 
 ### Products — `/api/products`
 
 #### `GET /api/products` 🔒
-Список товарів магазину з фільтрацією.
+Список товарів з фільтрацією.
 
-**Query params:**
-| Параметр | Тип | Опис |
-|---|---|---|
-| `categoryId` | number | ID категорії |
-| `subcategoryId` | number | ID підкатегорії |
-| `page` | number | Сторінка (default: 1) |
-| `limit` | number | Кількість на сторінці |
+**Query params:** `categoryId`, `subcategoryId`, `page`, `limit`
 
 **Response 200:**
 ```json
 {
-  "data": [ { "id": 1, "product_name": "...", "barcode": "...", "product_price": 99.99, ... } ],
-  "total": 150,
-  "status": "ok"
+  "data": [ { "id": 1, "product_name": "...", "barcode": "...", "product_price": 99.99 } ],
+  "total": 150
 }
 ```
 
 ---
 
 #### `GET /api/products/search` 🔒
-Пошук товарів за назвою або штрих-кодом.
-
-**Query params:**
-| Параметр | Тип | Опис |
-|---|---|---|
-| `searchQuery` | string | Рядок пошуку |
-
----
+Пошук за назвою або штрих-кодом. **Query:** `searchQuery=<рядок>`
 
 #### `GET /api/products/single` 🔒
-Отримати товар за штрих-кодом.
-
-**Query params:** `barcode=1234567890`
-
----
+Товар за штрих-кодом. **Query:** `barcode=1234567890`
 
 #### `GET /api/products/product`
-Отримати товар за combo ID.
-
-**Query params:** `comboId=5`
+Товар за combo ID. **Query:** `comboId=5`
 
 ---
 
 #### `POST /api/products/add`
-Додати товари (масив). Використовується синхронізацією з 1С.
+Додати / оновити товари (масив). Використовується синхронізацією з 1С.
 
-**Body:** масив об'єктів:
+**Body:**
 ```json
 [
   {
@@ -347,7 +587,6 @@ Authorization: Bearer <token>
     "measure": "шт",
     "product_code": "ABC001",
     "product_name_ua": "Назва UA",
-    "product_name_ru": "Название",
     "product_price": 99.99,
     "product_left": 10,
     "product_category": 1,
@@ -355,78 +594,28 @@ Authorization: Bearer <token>
     "exposition_term": 0,
     "sale_id": 0,
     "is_VAT_Excise": false,
-    "excise_product": false,
-    "is_new_product": false
+    "excise_product": false
   }
 ]
-```
-
-**Response 200:**
-```json
-{ "message": "Products added", "count": 5 }
 ```
 
 ---
 
 #### `POST /api/products/update`
-Оновити поля товарів (масив). Тільки передані поля змінюються.
-
-**Body:** масив об'єктів (обов'язково `barcode`, решта — опціонально):
-```json
-[
-  {
-    "barcode": "1234567890",
-    "product_price": 109.99,
-    "product_left": 8
-  }
-]
-```
-
----
+Оновити поля товарів. Обов'язково: `barcode`.
 
 #### `POST /api/products/withdraw`
-Списати залишки товарів.
-
-**Body:**
-```json
-[
-  { "barcode": "1234567890", "quantity": 2 }
-]
-```
-
----
-
-#### `POST /api/products/inventarization`
-Обнулити залишки всіх товарів (підготовка до інвентаризації).
-
-**Response 200:**
-```json
-{ "message": "Inventarization complete" }
-```
-
----
+Списати залишки. **Body:** `[{ "barcode": "...", "quantity": 2 }]`
 
 #### `POST /api/products/image`
-Зберегти зображення товарів (base64).
-
-**Body:**
-```json
-[
-  {
-    "productImage": "<base64-рядок>",
-    "fileName": "1234567890.jpg"
-  }
-]
-```
-
-Файли зберігаються в `IMAGE_DIR` (`/app/images` в Docker → `C:/git/mm-images` на диску).
+Зберегти зображення товарів (base64). **Body:** `[{ "productImage": "<base64>", "fileName": "..." }]`
 
 ---
 
 ### Cart — `/api/cart`
 
 #### `POST /api/cart/sell` 🔒
-Провести оплату кошика через термінал + фіскалізація.
+Провести оплату через термінал + поставити чек у чергу фіскалізації.
 
 **Body:**
 ```json
@@ -446,18 +635,14 @@ Authorization: Bearer <token>
 }
 ```
 
-**Response 200 — успіх:**
+**Response 200:**
 ```json
-{
-  "status": "success",
-  "fiscalResponse": {
-    "fiscalNoVAT": { ... },
-    "fiscalWithVAT": { ... }
-  }
-}
+{ "status": "success", "fiscalResponse": { "fiscalNoVAT": { ... }, "fiscalWithVAT": null } }
 ```
 
-**Response 200 — частковий успіх (2 мерчанти, перший пройшов, другий скасовано):**
+Можливі значення `status`: `success`, `part-success`, `cancelled`.
+
+При `part-success` — перша оплата пройшла, друга скасована:
 ```json
 {
   "status": "part-success",
@@ -466,106 +651,38 @@ Authorization: Bearer <token>
 }
 ```
 
-**Response 200 — скасовано:**
-```json
-{ "status": "cancelled" }
-```
-
 ---
 
 #### `DELETE /api/cart/cancel` 🔒
-Скасувати поточний платіж (перериває транзакцію на терміналі).
-
-**Response 200:**
-```json
-{ "status": "cancelled" }
-```
+Скасувати поточний платіж. **Response 200:** `{ "status": "cancelled" }`
 
 ---
 
 ### Config — `/api/config`
 
 #### `GET /api/config/check-categories`
-Отримати список категорій і підкатегорій.
-
-**Response 200:**
-```json
-{
-  "categories": [ { "id": 1, "category_name": "...", "cat_1C_id": 100, "subcategories": [...] } ]
-}
-```
-
----
+Список категорій з підкатегоріями.
 
 #### `POST /api/config/category`
-Додати категорії.
-
-**Body:**
-```json
-[
-  { "category_name": "Напої", "cat_1C_id": 100, "category_discount": null, "category_image": null }
-]
-```
-
----
+Додати категорії. **Body:** `[{ "category_name": "...", "cat_1C_id": 100, "category_discount": null }]`
 
 #### `PATCH /api/config/category`
-Оновити категорії.
-
-**Body:**
-```json
-[
-  { "cat_1C_id": 100, "category_name": "Нова назва", "category_priority": 1 }
-]
-```
-
----
+Оновити категорії. **Body:** `[{ "cat_1C_id": 100, "category_name": "...", "category_priority": 1 }]`
 
 #### `POST /api/config/subcategory`
-Додати підкатегорії.
-
-**Body:**
-```json
-[
-  { "cat_1C_id": 100, "subcat_1C_id": 200, "subcategory_name": "Соки", "subcategory_discount": null }
-]
-```
-
----
+Додати підкатегорії. **Body:** `[{ "cat_1C_id": 100, "subcat_1C_id": 200, "subcategory_name": "..." }]`
 
 #### `PATCH /api/config/subcategory`
 Оновити підкатегорії.
 
-**Body:**
-```json
-[
-  { "cat_1C_id": 100, "subcat_1C_id": 200, "subcategory_name": "Нова назва" }
-]
-```
-
----
-
 #### `POST /api/config/move-subcategory`
-Перемістити підкатегорію в іншу категорію (асинхронно, через чергу).
-
-**Body:**
-```json
-[
-  { "cat_1C_id": 100, "subcat_1C_id": 200, "new_cat_1C_id": 150, "subcat_name": "Соки" }
-]
-```
-
----
+Перемістити підкатегорію. **Body:** `[{ "cat_1C_id": 100, "subcat_1C_id": 200, "new_cat_1C_id": 150 }]`
 
 #### `GET /api/config/store-sale`
-Отримати поточну акцію магазину.
-
----
+Поточна акція магазину.
 
 #### `POST /api/config/store-sale`
-Встановити акцію магазину.
-
-**Body:**
+Встановити акцію.
 ```json
 {
   "store_sale_product_category": 1,
@@ -576,172 +693,98 @@ Authorization: Bearer <token>
 }
 ```
 
----
-
 #### `GET /api/config/merchant`
-Зчитати список мерчантів з терміналу, зберегти в БД і повернути поточні налаштування.
-
-> При одному мерчанті (немає окремого VAT) `vatExciseMerchant` буде `null`, `isSingleMerchant` = `true`.
-
-**Response 200:**
-```json
-{
-  "status": "success",
-  "defaultMerchant": "1",
-  "vatExciseMerchant": null,
-  "useVATbyDefault": false,
-  "isSingleMerchant": true,
-  "noVATTaxGroup": 7,
-  "VATTaxGroup": 1,
-  "VATExciseTaxGroup": 3
-}
-```
-
----
-
-#### `GET /api/config/terminal-merchants`
-Отримати сирий список мерчантів безпосередньо з терміналу (без запису в БД).
-
-**Response 200:**
-```json
-{
-  "merchants": [
-    { "merchantId": "1", "merchantName": "ФОП Іваненко. Оплата" }
-  ]
-}
-```
-
-> Мерчанти з назвою «Повернення» фільтруються автоматично — вони не є окремими мерчантами, а функцією повернення.
-
----
+Зчитати мерчантів з терміналу та зберегти в БД.
 
 #### `POST /api/config/merchant`
-Встановити мерчантів терміналу.
-
-**Body:**
+Встановити мерчантів.
 ```json
 {
   "defaultMerchant": "PQ0000000013166",
-  "vatExciseMerchant": "PQ0000000013167",
-  "useVATbyDefault": false,
-  "isSingleMerchant": true,
+  "vatExciseMerchant": null,
   "defaultMerchantTaxgrp": 1,
-  "vatExciseMerchantTaxgrp": 2
+  "vatExciseMerchantTaxgrp": null,
+  "isSingleMerchant": true,
+  "useVATbyDefault": false
 }
 ```
-
----
 
 #### `POST /api/config/category-image`
 Зберегти зображення категорій (base64).
 
-**Body:**
+---
+
+### Fiscal — `/api/fiscal`
+
+#### `GET /api/fiscal/queue/pending`
+Кількість чеків у черзі (статус `pending` або `processing`).
+
+**Response 200:** `5` (число)
+
+---
+
+#### `GET /api/fiscal/queue/failed`
+Список чеків, що не пройшли після всіх спроб.
+
+**Response 200:**
 ```json
 [
   {
-    "categoryImage": "<base64-рядок>",
-    "fileName": "category_100.jpg",
-    "categoryId": 100
+    "id": 42,
+    "merchant_id": "PQ...",
+    "with_vat": false,
+    "attempts": 10,
+    "last_error": "Fiscal API error: res=1, ...",
+    "created_at": "2026-06-24T18:30:00.000Z"
   }
 ]
 ```
 
-Файли зберігаються в `CATEGORY_IMAGE_DIR` (`/app/images/cat-images` → `C:/git/mm-images/cat-images`).
+> Чеки зі статусом `failed` потребують ручного втручання: виправити проблему у кабінеті Вчасно.Каса, потім змінити `status = 'pending'` у таблиці `FiscalQueue` для повторної спроби.
 
 ---
 
-### Static files
+### Логіка черги фіскалізації
 
-#### `GET /api/product-image/:filename`
-Отримати зображення товару.
-
-Приклад: `GET /api/product-image/1234567890.jpg`
-
----
-
-#### `GET /api/category-image/:filename`
-Отримати зображення категорії.
-
-Приклад: `GET /api/category-image/category_100.jpg`
-
----
-
-#### `GET /api/reciept-proxy/:id`
-Отримати фіскальний чек з vchasno.kasa за ID.
-
-**Response 200:**
-```json
-{ "data": { ... }, "message": "Tax reciept" }
-```
+- Чеки обробляються хронологічно (за `created_at`) **у межах кожного мерчанта окремо**.
+- При помилці — exponential backoff: 10 с → 20 с → 40 с ... до 30 хв. Максимум 10 спроб.
+- `res_action=3` від Вчасно = fatal error, повтор марний — надсилається email-сповіщення.
+- Щодня **о 00:00 (Київ)** всі незареєстровані чеки попереднього дня переносяться в `OverdueFiscalQueue`, новий день починається з чистою чергою. На `OVERDUE_FISCALS_EMAIL` надсилається XLSX-звіт.
+- Якщо кількість чеків у черзі перевищує `FISCAL_QUEUE_ALERT_THRESHOLD` — надсилається email-сповіщення (не частіше 1 разу на годину).
 
 ---
 
 ### Admin — `/api/admin/store`
 
-#### `GET /api/admin/store`
-Список всіх магазинів.
-
-#### `GET /api/admin/store/config`
-Конфігурація поточного магазину (з env `STORE_AUTH_ID`).
-
-#### `GET /api/admin/store/products`
-Всі товари (без прив'язки до магазину).
-
-#### `POST /api/admin/store/products`
-Додати товари напряму (спрощений формат, без обов'язкових полів синхронізації).
-
-**Body:**
-```json
-[
-  { "product_name": "Назва", "barcode": "123", "price": 50, "total": 10, "image": "filename.jpg" }
-]
-```
-
-#### `PATCH /api/admin/store/products`
-Масове оновлення товарів (довільні поля).
-
-#### `POST /api/admin/store/create`
-Створити новий магазин.
-
-**Body:**
-```json
-{ "name": "Магазин 1", "location": "Київ", "auth_id": "111111", "password": "secret" }
-```
-
-#### `GET /api/admin/store/withdraws`
-Журнал списань.
-
-#### `POST /api/admin/store`
-Додати товари в магазин.
-
-**Body:**
-```json
-{
-  "store_id": 11,
-  "productsToAdd": [ { "product_id": 1, "quantity": 100, "discount": 0 } ]
-}
-```
+| Метод | Шлях | Опис |
+|---|---|---|
+| `GET` | `/api/admin/store` | Список всіх магазинів |
+| `GET` | `/api/admin/store/config` | Конфіг поточного магазину |
+| `GET` | `/api/admin/store/products` | Всі товари |
+| `POST` | `/api/admin/store/products` | Додати товари (спрощений формат) |
+| `PATCH` | `/api/admin/store/products` | Масове оновлення товарів |
+| `POST` | `/api/admin/store/create` | Створити новий магазин |
+| `GET` | `/api/admin/store/withdraws` | Журнал списань |
+| `POST` | `/api/admin/store` | Додати товари в магазин |
 
 ---
 
 ### Sales — `/api/sales`
 
-#### `GET /api/sales` — список акцій
-#### `POST /api/sales/add` — додати акцію
-#### `POST /api/sales/edit` — редагувати акцію
-#### `DELETE /api/sales/delete` — видалити акцію (`body: { sale_custom_id: 5 }`)
+| Метод | Шлях | Опис |
+|---|---|---|
+| `GET` | `/api/sales` | Список акцій |
+| `POST` | `/api/sales/add` | Додати акцію |
+| `POST` | `/api/sales/edit` | Редагувати акцію |
+| `DELETE` | `/api/sales/delete` | Видалити акцію (`body: { sale_custom_id: 5 }`) |
 
 ---
 
 ### Finance — `/api/finance`
 
 #### `POST /api/finance`
-Отримати операції терміналу за період.
 
-**Body:**
-```json
-{ "start": "2026-01-01", "end": "2026-06-30", "type": 1 }
-```
+**Body:** `{ "start": "2026-01-01", "end": "2026-06-30", "type": 1 }`
 
 `type`: `1` — покупки, `2` — повернення (опціонально).
 
@@ -750,73 +793,152 @@ Authorization: Bearer <token>
 ### Kiosk — `/api/admin/kiosk`
 
 #### `POST /api/admin/kiosk/sync`
-Примусово запустити синхронізацію черги оновлень товарів (без очікування idle-стану кіоску).
+Примусово запустити синхронізацію черги оновлень товарів.
 
-**Response 200:**
-```json
-{ "message": "Sync triggered", "errors": [] }
-```
+**Response 200:** `{ "message": "Sync triggered", "errors": [] }`
 
 ---
 
-### Fiscal — `/api/fiscal`
+### Screensaver — `/api/screensaver`
 
-#### `GET /api/fiscal/tokens`
-Повернути поточні токени Вчасно.Каса (з БД або env-fallback) та перевірити їх статус через API Вчасно (task 18 — «Статус пРРО»).
+Скрінсейвер відображається коли кіоск переходить у режим очікування.  
+Якщо режим не задано або файл відсутній — відображається стандартна CSS-заставка.
 
-**Response 200:**
-```json
-{
-  "token": "q8FYOPDa...",
-  "tokenVat": "5dq5ej0F...",
-  "tokenStatus": {
-    "valid": true,
-    "res": 0,
-    "errortxt": "",
-    "fisid": "3000012345",
-    "isFis": 1,
-    "shift_status": 1,
-    "online_status": 0
-  },
-  "tokenVatStatus": {
-    "valid": true,
-    "res": 0,
-    "errortxt": "",
-    "fisid": "3000012346",
-    "isFis": 1,
-    "shift_status": 0,
-    "online_status": 0
-  }
-}
-```
+**Директорії:**
+- Зображення: `SCREENSAVER_DIR` (default: `C:/mm-images/screensavers`)
+- Відео: `SCREENSAVER_DIR/video` (default: `C:/mm-images/screensavers/video`)
 
-| Поле `tokenStatus` | Значення |
+**Підтримувані формати:**
+
+| Тип | Розширення |
 |---|---|
-| `valid` | `true` — токен прийнятий Вчасно |
-| `isFis` | `1` — фіскальна каса, `0` — тестова |
-| `shift_status` | `0` — зміну закрито, `1` — відкрито, `2` — заблоковано |
-| `online_status` | `0` — online, `1` — offline, `2` — заблоковано |
+| Зображення | `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` |
+| Відео | `.mp4`, `.webm`, `.mov` |
 
-> Якщо `tokenVat` не заданий або збігається з `token`, `tokenVatStatus` буде `null`.
+Максимальний розмір файлу: **200 MB**.
 
 ---
 
-#### `POST /api/fiscal/tokens`
-Зберегти токени в БД і одразу перевірити їх.
+#### `GET /api/screensaver/config`
+Отримати поточний конфіг скрінсейвера.
 
-**Body:**
+**Response 200:**
 ```json
 {
-  "token": "q8FYOPDa...",
-  "tokenVat": "5dq5ej0F..."
+  "mode": "carousel",
+  "filename": null,
+  "interval": 20,
+  "file": null
 }
 ```
 
-> `tokenVat` — необов'язкове. Якщо магазин має один РРО (без ПДВ), передавати не потрібно.
+| Поле | Тип | Опис |
+|---|---|---|
+| `mode` | `'static'` \| `'carousel'` \| `'video'` \| `null` | `null` → CSS-заставка за замовчуванням |
+| `filename` | string \| null | Ім'я файлу (для `static` і `video`). `null` для `carousel` |
+| `interval` | number | Інтервал каруселі в секундах (завжди присутній, default: `30`) |
+| `file` | object \| null | Розгорнута інформація про файл або `null` для `carousel` |
 
-**Response 200:** аналогічна структура до `GET /api/fiscal/tokens` (без полів `token`/`tokenVat`, тільки статуси перевірки).
+`file` (якщо не `null`):
+```json
+{ "filename": "promo.jpg", "type": "image", "url": "http://localhost:6006/api/screensaver-file/promo.jpg" }
+```
 
-> Після збереження токен-кеш скидається, всі наступні фіскальні запити використовуватимуть нові токени.
+---
+
+#### `POST /api/screensaver/config`
+Зберегти конфіг скрінсейвера. Повертає актуальний конфіг (той самий формат, що GET).
+
+**Режим `static` — один файл-зображення:**
+```json
+{ "mode": "static", "filename": "promo.jpg" }
+```
+
+**Режим `carousel` — всі зображення по черзі:**
+```json
+{ "mode": "carousel", "interval": 20 }
+```
+`interval` — в секундах, від 5 до 3600. Default: `30`.
+
+**Режим `video`:**
+```json
+{ "mode": "video", "filename": "ad.mp4" }
+```
+
+| Поле | Обов'язкове | Опис |
+|---|:---:|---|
+| `mode` | ✅ | `'static'`, `'carousel'` або `'video'` |
+| `filename` | ✅ для `static`/`video` | Ім'я файлу (має існувати на диску) |
+| `interval` | — | Інтервал каруселі (лише для `carousel`) |
+
+---
+
+#### `DELETE /api/screensaver/config`
+Скинути конфіг — повертає до CSS-заставки за замовчуванням.
+
+**Response 200:** `{ "cleared": true }`
+
+---
+
+#### `GET /api/screensaver/files`
+Всі файли скрінсейвера (зображення + відео).
+
+**Response 200:**
+```json
+{
+  "files": [
+    { "filename": "promo.jpg", "type": "image", "url": "http://localhost:6006/api/screensaver-file/promo.jpg" },
+    { "filename": "ad.mp4",   "type": "video", "url": "http://localhost:6006/api/screensaver-file/ad.mp4" }
+  ]
+}
+```
+
+#### `GET /api/screensaver/images`
+Тільки зображення (з `SCREENSAVER_DIR`).
+
+#### `GET /api/screensaver/videos`
+Тільки відео (з `SCREENSAVER_DIR/video`).
+
+---
+
+#### `POST /api/screensaver/upload`
+Завантажити файл. Тип визначається автоматично за розширенням — відео зберігаються в підпапку `/video`.
+
+```bash
+curl -X POST http://localhost:6006/api/screensaver/upload -F "file=@/path/to/promo.jpg"
+```
+
+PowerShell:
+```powershell
+$form = @{ file = Get-Item 'C:\path\to\ad.mp4' }
+Invoke-RestMethod -Uri 'http://localhost:6006/api/screensaver/upload' -Method Post -Form $form
+```
+
+**Response 200:** `{ "filename": "ad.mp4", "size": 15728640 }`
+
+---
+
+#### `DELETE /api/screensaver/file/:filename`
+Видалити файл. Якщо файл був активним — конфіг скрінсейвера скидається.
+
+**Response 200:** `{ "deleted": "promo.jpg" }`
+
+---
+
+#### `GET /api/screensaver-file/:filename`
+Роздача файлу скрінсейвера. Підтримує `Range`-запити (відео без повного завантаження).
+
+Приклад: `http://localhost:6006/api/screensaver-file/ad.mp4`
+
+---
+
+### Static files
+
+| Метод | Шлях | Опис |
+|---|---|---|
+| `GET` | `/api/product-image/:filename` | Зображення товару |
+| `GET` | `/api/category-image/:filename` | Зображення категорії |
+| `GET` | `/api/reciept-proxy/:id` | Фіскальний чек з vchasno.kasa |
 
 ---
 
@@ -824,186 +946,18 @@ Authorization: Bearer <token>
 
 Підключення: `ws://localhost:6006` (або через nginx proxy на порту 80).
 
-| Подія (сервер → клієнт) | Опис |
-|---|---|
-| `terminal-status` | Статус терміналу: `{ status: 'online' \| 'offline' }` |
-| `secondPayment` | Сигнал початку другого платежу (2 мерчанти) |
-| `fiscal-update` | Оновлення статусу фіскалізації |
+**Сервер → клієнт:**
 
-| Подія (клієнт → сервер) | Опис |
-|---|---|
-| `idle-status` | Кіоск переходить в idle: `true \| false` |
+| Подія | Дані | Опис |
+|---|---|---|
+| `terminal-status` | `{ status: 'online' \| 'offline' }` | Зміна статусу терміналу |
+| `secondPayment` | — | Початок другого платежу (2 мерчанти) |
+| `product-updated` | — | Зміна в асортименті (тригер для refresh) |
+| `screen-status` | — | Запит кіоску: чи в idle? Відповідь клієнта → `idle-status` |
 
----
+**Клієнт → сервер:**
 
-## Фіскальні токени
-
-Токени Вчасно.Каса зберігаються в таблиці `Store` (колонки `fiscal_token`, `fiscal_token_vat`).  
-При першому запуску, якщо токени в БД відсутні, використовуються значення `AUTH_MERCH_TOKEN` та `AUTH_MERCH_TOKEN_VAT` з `.env` як fallback.
-
-### Як додати / оновити токени
-
-1. Відкрити кабінет [kasa.vchasno.ua](https://kasa.vchasno.ua) → **Налаштування** → конкретна каса → **Налаштувати касу**
-2. Скопіювати токен каси
-3. Надіслати POST-запит:
-
-```bash
-curl -X POST http://localhost:6006/api/fiscal/tokens \
-  -H "Content-Type: application/json" \
-  -d '{"token": "ВАШТОКЕН"}'
-```
-
-Або через PowerShell:
-```powershell
-Invoke-RestMethod -Uri 'http://localhost:6006/api/fiscal/tokens' `
-  -Method Post -ContentType 'application/json' `
-  -Body '{"token":"ВАШТОКЕН"}'
-```
-
-У відповіді буде `tokenStatus.valid: true` якщо токен прийнятий Вчасно.
-
-### Перевірка поточних токенів
-
-```bash
-curl http://localhost:6006/api/fiscal/tokens
-```
-
-### Два мерчанти (з ПДВ і без)
-
-Якщо у магазину два РРО (один для звичайних товарів, інший для товарів з ПДВ/акцизом):
-
-```json
-{
-  "token": "ТОКЕН_БЕЗ_ПДВ",
-  "tokenVat": "ТОКЕН_З_ПДВ"
-}
-```
-
-Система автоматично використовує потрібний токен залежно від групи товарів у чеку.
-
-### На старті застосунку
-
-При кожному запуску бекенд автоматично перевіряє обидва токени через Вчасно API (task 18 — «Статус пРРО»).  
-Результат виводиться в лог:
-```
-LOG [FiscalService] Fiscal token check: valid=true, fisid=3000012345, isFis=1, shift=1, online=0
-```
-
----
-
-## Скрінсейвер
-
-Скрінсейвер відображається на екрані кіоску коли кіоск переходить у режим очікування.  
-Підтримуються зображення (JPG, PNG, WEBP, GIF) та відео (MP4, WEBM, MOV).  
-Максимальний розмір файлу: **200 MB**.
-
-Файли зберігаються в директорії `SCREENSAVER_DIR` (`.env`), за замовчуванням `C:/mm-images/screensavers`.
-
-### Кроки для встановлення скрінсейвера
-
-#### 1. Завантажити файл
-
-```bash
-curl -X POST http://localhost:6006/api/screensaver/upload \
-  -F "file=@/path/to/video.mp4"
-```
-
-PowerShell:
-```powershell
-$form = @{ file = Get-Item 'C:\path\to\video.mp4' }
-Invoke-RestMethod -Uri 'http://localhost:6006/api/screensaver/upload' -Method Post -Form $form
-```
-
-**Response 200:**
-```json
-{ "filename": "video.mp4", "size": 15728640 }
-```
-
-#### 2. Переглянути завантажені файли
-
-```bash
-curl http://localhost:6006/api/screensaver/files
-```
-
-**Response 200:**
-```json
-{
-  "files": [
-    { "filename": "promo.jpg",  "type": "image", "url": "http://localhost:6006/api/screensaver-file/promo.jpg" },
-    { "filename": "video.mp4",  "type": "video", "url": "http://localhost:6006/api/screensaver-file/video.mp4" }
-  ]
-}
-```
-
-#### 3. Активувати скрінсейвер
-
-```bash
-curl -X PUT http://localhost:6006/api/screensaver/active \
-  -H "Content-Type: application/json" \
-  -d '{"filename": "video.mp4"}'
-```
-
-PowerShell:
-```powershell
-Invoke-RestMethod -Uri 'http://localhost:6006/api/screensaver/active' `
-  -Method Put -ContentType 'application/json' `
-  -Body '{"filename":"video.mp4"}'
-```
-
-**Response 200:**
-```json
-{ "filename": "video.mp4" }
-```
-
-Кіоск підхопить новий скрінсейвер при наступному переході в idle — перезапуск не потрібен.
-
-#### 4. Деактивувати скрінсейвер
-
-```bash
-curl -X PUT http://localhost:6006/api/screensaver/active \
-  -H "Content-Type: application/json" \
-  -d '{"filename": null}'
-```
-
-#### 5. Видалити файл
-
-```bash
-curl -X DELETE http://localhost:6006/api/screensaver/video.mp4
-```
-
-> Якщо видалений файл був активним — скрінсейвер автоматично деактивується.
-
-### Отримати активний скрінсейвер
-
-```bash
-curl http://localhost:6006/api/screensaver/active
-```
-
-**Response 200 (активний):**
-```json
-{ "filename": "video.mp4", "type": "video", "url": "http://localhost:6006/api/screensaver-file/video.mp4" }
-```
-
-**Response 200 (не встановлено):**
-```json
-{ "filename": null, "type": null, "url": null }
-```
-
-### Перегляд файлу напряму
-
-```
-GET /api/screensaver-file/:filename
-```
-
-Приклад: `http://localhost:6006/api/screensaver-file/video.mp4`
-
-Підтримує `Range`-запити (відео відтворюється в браузері без повного завантаження).
-
-### Підтримувані формати
-
-| Тип | Формати |
-|---|---|
-| Зображення | `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` |
-| Відео | `.mp4`, `.webm`, `.mov` |
-
-> Відео відтворюється автоматично (autoplay, loop, без звуку). Рекомендований формат — **MP4 (H.264)** для максимальної сумісності.
+| Подія | Дані | Опис |
+|---|---|---|
+| `idle-status` | `{ isIdleOpen: true \| false }` | Перехід в / вихід з idle-режиму |
+| `admin-ping` | — | Перевірка з'єднання. Відповідь: `admin-pong` |

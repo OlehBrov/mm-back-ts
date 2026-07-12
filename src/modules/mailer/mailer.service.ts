@@ -4,6 +4,9 @@ import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { fiscalFatalTemplate, FiscalFatalContext } from './templates/fiscal-fatal.template';
 import { fiscalFailedTemplate, FiscalFailedContext } from './templates/fiscal-failed.template';
+import { fiscalQueueOverflowTemplate, FiscalQueueOverflowContext } from './templates/fiscal-queue-overflow.template';
+import { overdueFiscalsTemplate, OverdueFiscalsContext } from './templates/overdue-fiscals.template';
+import { merchantCodeMismatchTemplate, MerchantCodeMismatchContext } from './templates/merchant-code-mismatch.template';
 
 @Injectable()
 export class MailerService {
@@ -11,12 +14,14 @@ export class MailerService {
   private readonly transporter: Transporter;
   private readonly from: string;
   private readonly to: string;
+  readonly supportTo: string;
   private readonly enabled: boolean;
 
   constructor(private readonly config: ConfigService) {
     const host = config.get<string>('mailer.host');
     this.from = config.get<string>('mailer.from') ?? 'MicroMarket <noreply@localhost>';
     this.to = config.get<string>('mailer.to') ?? '';
+    this.supportTo = config.get<string>('mailer.supportTo') ?? '';
     this.enabled = !!host && !!this.to;
 
     if (!this.enabled) {
@@ -31,6 +36,7 @@ export class MailerService {
         user: config.get<string>('mailer.user'),
         pass: config.get<string>('mailer.pass'),
       },
+      tls: { rejectUnauthorized: false },
     });
   }
 
@@ -44,13 +50,43 @@ export class MailerService {
     await this.send(subject, html);
   }
 
+  async sendFiscalQueueOverflowAlert(ctx: FiscalQueueOverflowContext): Promise<void> {
+    const { subject, html } = fiscalQueueOverflowTemplate(ctx);
+    await this.send(subject, html);
+  }
+
+  async sendOverdueFiscalsReport(
+    ctx: OverdueFiscalsContext,
+    xlsxBuffer: Buffer,
+    to: string,
+  ): Promise<void> {
+    const { subject, html } = overdueFiscalsTemplate(ctx);
+    await this.send(subject, html, to, [
+      {
+        filename: `overdue-fiscals-${ctx.reportDate.replace(/\./g, '-')}.xlsx`,
+        content: xlsxBuffer,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+    ]);
+  }
+
+  async sendMerchantCodeMismatchAlert(ctx: MerchantCodeMismatchContext, to: string): Promise<void> {
+    const { subject, html } = merchantCodeMismatchTemplate(ctx);
+    await this.send(subject, html, to);
+  }
+
   /** Send to a dynamic recipient (e.g. feedback_email from DB). */
   async sendTo(to: string, subject: string, html: string): Promise<void> {
     if (!to) return;
     await this.send(subject, html, to);
   }
 
-  private async send(subject: string, html: string, toOverride?: string): Promise<void> {
+  private async send(
+    subject: string,
+    html: string,
+    toOverride?: string,
+    attachments?: nodemailer.SendMailOptions['attachments'],
+  ): Promise<void> {
     const recipient = toOverride ?? this.to;
     if (!recipient) return;
     if (!toOverride && !this.enabled) return;
@@ -61,6 +97,7 @@ export class MailerService {
         to: recipient,
         subject,
         html,
+        attachments,
       });
       this.logger.log(`Email sent to <${recipient}>: "${subject}"`);
     } catch (err) {

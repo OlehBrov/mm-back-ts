@@ -22,6 +22,7 @@ export default () => ({
     merchantToken: process.env.AUTH_MERCH_TOKEN,
     merchantTokenVat: process.env.AUTH_MERCH_TOKEN_VAT,
     retryIntervalMs: parseInt(process.env.FISCAL_RETRY_INTERVAL_MS ?? '10000', 10),
+    queueAlertThreshold: parseInt(process.env.FISCAL_QUEUE_ALERT_THRESHOLD ?? '0', 10),
   },
   images: {
     dir: process.env.IMAGE_DIR ?? 'C:/mm-images',
@@ -42,5 +43,7 @@ export default () => ({
     pass: process.env.MAIL_PASS ?? '',
     from: process.env.MAIL_FROM ?? 'MicroMarket <noreply@localhost>',
     to: process.env.MAIL_TO ?? '',
+    supportTo: process.env.MAIL_SUPPORT_TO ?? '',
+    overdueEmail: process.env.OVERDUE_FISCALS_EMAIL ?? '',
   },
 });

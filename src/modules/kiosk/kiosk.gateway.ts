@@ -15,7 +15,7 @@ import { TERMINAL_STATUS_EVENT } from '../terminal/constants';
 import { TerminalService } from '../terminal/terminal.service';
 import { SECOND_PAYMENT_EVENT } from '../cart/cart.service';
 import { PRODUCT_UPDATED_EVENT, STORE_SALE_UPDATED_EVENT } from '../store/constants';
-import { RECEIPT_READY_EVENT } from '../fiscal/fiscal.service';
+import { RECEIPT_READY_EVENT, MERCHANT_CODE_MISMATCH_EVENT, MAINTENANCE_CLEARED_EVENT, FiscalService } from '../fiscal/fiscal.service';
 import { IdleSyncService } from './idle-sync.service';
 
 /**
@@ -44,6 +44,7 @@ export class KioskGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly terminalService: TerminalService,
     private readonly idleSyncService: IdleSyncService,
+    private readonly fiscalService: FiscalService,
   ) {}
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -51,6 +52,9 @@ export class KioskGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleConnection(client: Socket): void {
     this.logger.log(`Client connected: ${client.id}`);
     client.emit('terminal-status', { status: this.terminalService.getStatus() });
+    if (this.fiscalService.isMaintenanceActive()) {
+      client.emit('maintenance-mode', { enabled: true, reason: 'merchant_code_mismatch' });
+    }
   }
 
   handleDisconnect(client: Socket): void {
@@ -159,6 +163,28 @@ export class KioskGateway implements OnGatewayConnection, OnGatewayDisconnect {
   onReceiptReady(payload: { withVat: boolean; raw: Record<string, unknown> }): void {
     const key = payload.withVat ? 'fiscalWithVAT' : 'fiscalNoVAT';
     this.server.emit('receipt-ready', { [key]: { fiscal: payload.raw } });
+  }
+
+  /**
+   * Emitted by FiscalService when the edrpou or merchant name from Vchasno
+   * does not match the configured values. Tells the kiosk to show the maintenance screen.
+   */
+  @OnEvent(MERCHANT_CODE_MISMATCH_EVENT)
+  onMerchantCodeMismatch(payload: {
+    merchantId: string;
+    configuredCode: string;
+    vchasnoCode: string;
+  }): void {
+    this.server.emit('maintenance-mode', { enabled: true, reason: 'merchant_code_mismatch', ...payload });
+  }
+
+  /**
+   * Emitted by FiscalService after setKioskConfig when all token verifications passed.
+   * Tells the kiosk to hide the maintenance screen and become active.
+   */
+  @OnEvent(MAINTENANCE_CLEARED_EVENT)
+  onMaintenanceCleared(): void {
+    this.server.emit('maintenance-mode', { enabled: false });
   }
 
   // ─── Periodic screen-status poll ─────────────────────────────────────────

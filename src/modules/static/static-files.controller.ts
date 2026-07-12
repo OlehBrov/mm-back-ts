@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
-
+import { VIDEO_EXTS } from '../screensaver/screensaver.service';
 
 @Controller('product-image')
 export class ProductImageController {
@@ -50,15 +50,19 @@ export class CategoryImageController {
 @Controller('screensaver-file')
 export class ScreensaverFileController {
   private readonly screensaverDir: string;
+  private readonly videoDir: string;
 
   constructor(config: ConfigService) {
     this.screensaverDir = config.get<string>('images.screensaverDir') ?? 'C:/mm-images/screensavers';
+    this.videoDir = path.join(this.screensaverDir, 'video');
   }
 
   @Get(':filename')
   serveScreensaverFile(@Param('filename') filename: string, @Res() res: Response) {
-    const filePath = path.resolve(this.screensaverDir, filename);
-    if (!filePath.startsWith(path.resolve(this.screensaverDir))) {
+    const isVideo = VIDEO_EXTS.has(path.extname(filename).toLowerCase());
+    const baseDir = isVideo ? this.videoDir : this.screensaverDir;
+    const filePath = path.resolve(baseDir, filename);
+    if (!filePath.startsWith(path.resolve(baseDir))) {
       throw new NotFoundException('File not found');
     }
     if (!fs.existsSync(filePath)) {

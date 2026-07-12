@@ -343,7 +343,9 @@ export class StoreService {
     }
     // ──────────────────────────────────────────────────────────────────────────
 
-    for (const p of queueReady) {
+    const resolvedForQueue = await this.resolveComboProducts(queueReady);
+
+    for (const p of resolvedForQueue) {
       await this.idleSync.enqueueProductUpdate({
         action: 'add',
         barcode: String(p.barcode),
@@ -365,6 +367,7 @@ export class StoreService {
         product_category: Number(p.product_category),
         product_subcategory: Number(p.product_subcategory),
         product_division: p.product_division ? Number(p.product_division) : undefined,
+        child_product_barcode: p.child_product_barcode ?? null,
       });
     }
 
@@ -725,12 +728,15 @@ export class StoreService {
         result.push({ ...p, sale_id: 0, child_product_barcode: null });
         continue;
       }
-      const child = await this.prisma.products.findUnique({ where: { barcode: p.child_product_barcode } });
-      if (!child) {
+      const child = await this.prisma.products.findUnique({
+        where: { barcode: p.child_product_barcode },
+        select: { id: true, product_left: true },
+      });
+      if (!child || Number(child.product_left ?? 0) <= 0) {
         result.push({ ...p, sale_id: 0, child_product_barcode: null });
         continue;
       }
-      result.push({ ...p, child_id: child.id } as T);
+      result.push({ ...p } as T);
     }
     return result;
   }

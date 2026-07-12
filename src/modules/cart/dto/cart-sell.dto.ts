@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -33,6 +34,7 @@ export class CartProductDto {
   product_price!: number;
 
   @IsNumber()
+  @Min(0)
   priceDecrement!: number;
 
   @IsOptional()

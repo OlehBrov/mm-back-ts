@@ -194,6 +194,8 @@ model Store {
   feedback_email                 String?        @db.NVarChar(255)
   last_feedback_report_date      DateTime?      @db.Date
   screensaver                    String?        @db.VarChar(255)
+  screensaver_mode               String?        @db.VarChar(20)
+  screensaver_interval           Int?
   Categories                     Categories?    @relation(fields: [store_sale_product_category], references: [cat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Categories_FK")
   Subcategories                  Subcategories? @relation(fields: [store_sale_product_subcategory], references: [subcat_1C_id], onDelete: NoAction, onUpdate: NoAction, map: "Store_Subcategories_FK")
 }
@@ -204,21 +206,30 @@ model Feedbacks {
   created_at DateTime @default(now()) @db.DateTime2
 }
 
+model ServiceUsers {
+  id        Int      @id(map: "ServiceUsers_PK") @default(autoincrement())
+  createdAt DateTime @default(now()) @db.DateTime2
+  password  String   @db.NVarChar(100)
+}
+
 model TerminalConfig {
-  id   Int     @id(map: "TerminalConfig_PK") @default(autoincrement())
-  bank String  @unique(map: "TerminalConfig_UNIQUE") @db.NVarChar(20)
-  name String? @db.NVarChar(100)
-  host String? @db.VarChar(100)
-  port Int?
+  id          Int     @id(map: "TerminalConfig_PK") @default(autoincrement())
+  bank        String  @unique(map: "TerminalConfig_UNIQUE") @db.NVarChar(20)
+  name        String? @db.NVarChar(100)
+  host        String? @db.VarChar(100)
+  port        Int?
+  terminal_id String? @db.VarChar(50)
 }
 
 model FiscalConfig {
-  id            Int     @id(map: "FiscalConfig_PK") @default(autoincrement())
-  merchant_id   String  @unique(map: "FiscalConfig_UNIQUE") @db.VarChar(100)
-  merchant_name String? @db.NVarChar(255)
-  merchant_code String? @db.VarChar(20)
-  fiscal_token  String? @db.NVarChar(255)
-  taxgrp        Int?
+  id                      Int     @id(map: "FiscalConfig_PK") @default(autoincrement())
+  merchant_id             String  @unique(map: "FiscalConfig_UNIQUE") @db.VarChar(100)
+  merchant_name           String? @db.NVarChar(255)
+  merchant_code           String? @db.VarChar(20)
+  fiscal_token            String? @db.NVarChar(255)
+  taxgrp                  Int?
+  vchason_merchant_code   String? @db.VarChar(20)
+  vchason_merchant_name   String? @db.NVarChar(255)
 }
 
 model Subcategories {
@@ -306,7 +317,8 @@ model ProductUpdateQueue {
   product_category    Int?
   product_subcategory Int?
   product_division    Int?
-  sale_id             Int?
+  sale_id                 Int?
+  child_product_barcode   String?   @db.VarChar(100)
   action              String    @default("add", map: "DF__ProdUpdQu__action") @db.VarChar(20)
   status              String    @default("pending", map: "DF__ProdUpdQu__status") @db.VarChar(20)
   created_at          DateTime  @default(now(), map: "DF__ProdUpdQu__create") @db.DateTime
@@ -353,6 +365,21 @@ model CategoryTaskQueue {
   new_cat_1C_id        Int?
   created_at           DateTime  @default(now(), map: "DF__CatTaskQ__create") @db.DateTime
   processed_at         DateTime? @db.DateTime
+}
+
+model OverdueFiscalQueue {
+  id                 Int      @id(map: "OverdueFiscalQueue_PK") @default(autoincrement())
+  original_id        Int
+  payload            String   @db.NVarChar(Max)
+  with_vat           Boolean  @default(false, map: "DF__OverdueFQ__with_vat")
+  bank               String   @default("", map: "DF__OverdueFQ__bank") @db.VarChar(20)
+  merchant_id        String   @default("", map: "DF__OverdueFQ__merch") @db.VarChar(100)
+  status             String   @default("pending", map: "DF__OverdueFQ__status") @db.VarChar(20)
+  attempts           Int      @default(0, map: "DF__OverdueFQ__attemp")
+  last_error         String?  @db.NVarChar(500)
+  remove_product_ids String?  @db.NVarChar(500)
+  created_at         DateTime @db.DateTime
+  archived_at        DateTime @default(now(), map: "DF__OverdueFQ__arch") @db.DateTime
 }
 
 model FiscalQueue {

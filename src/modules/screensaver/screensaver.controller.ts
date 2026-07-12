@@ -7,37 +7,75 @@ import {
   HttpCode,
   Param,
   Post,
-  Put,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
-import { ScreensaverService } from './screensaver.service';
+import { ScreensaverService, VIDEO_EXTS, IMAGE_EXTS } from './screensaver.service';
+import { SetScreensaverConfigDto } from './dto/screensaver-config.dto';
 
-const ALLOWED_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.webm', '.mov'];
+const ALLOWED_EXTS = new Set([...IMAGE_EXTS, ...VIDEO_EXTS]);
 
 @Controller('screensaver')
 export class ScreensaverController {
   constructor(private readonly screensaverService: ScreensaverService) {}
 
+  // ── File listing ─────────────────────────────────────────────────────────────
+
+  /** All screensaver files (images + videos). */
   @Get('files')
   listFiles() {
     return this.screensaverService.listFiles();
   }
 
-  @Get('active')
-  getActive() {
-    return this.screensaverService.getActive();
+  /** Only image files from the screensaver directory. */
+  @Get('images')
+  listImages() {
+    return this.screensaverService.listImages();
   }
 
-  @Put('active')
-  setActive(@Body() body: { filename: string | null }) {
-    return this.screensaverService.setActive(body.filename ?? null);
+  /** Only video files from the screensaver/video directory. */
+  @Get('videos')
+  listVideos() {
+    return this.screensaverService.listVideos();
   }
 
-  @Delete(':filename')
+  // ── Config ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Get current screensaver config.
+   * mode: 'static' | 'carousel' | 'video' | null
+   * null means no config set → frontend shows default CSS screensaver.
+   */
+  @Get('config')
+  getConfig() {
+    return this.screensaverService.getConfig();
+  }
+
+  /**
+   * Save screensaver config.
+   * - mode 'static': filename required (image file)
+   * - mode 'video':  filename required (video file)
+   * - mode 'carousel': interval (seconds, default 30), filename ignored
+   */
+  @Post('config')
+  @HttpCode(200)
+  setConfig(@Body() dto: SetScreensaverConfigDto) {
+    return this.screensaverService.setConfig(dto);
+  }
+
+  /** Clear screensaver config — reverts to default CSS screensaver. */
+  @Delete('config')
+  @HttpCode(200)
+  clearConfig() {
+    return this.screensaverService.clearConfig();
+  }
+
+  // ── File management ──────────────────────────────────────────────────────────
+
+  @Delete('file/:filename')
   @HttpCode(200)
   deleteFile(@Param('filename') filename: string) {
     return this.screensaverService.deleteFile(filename);
@@ -47,9 +85,10 @@ export class ScreensaverController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: (_req, _file, cb) => {
-          // Uses the same env var as ScreensaverService — directory is guaranteed to exist
-          cb(null, process.env.SCREENSAVER_DIR ?? 'C:/mm-images/screensavers');
+        destination: (_req, file, cb) => {
+          const ext = path.extname(file.originalname).toLowerCase();
+          const baseDir = process.env.SCREENSAVER_DIR ?? 'C:/mm-images/screensavers';
+          cb(null, VIDEO_EXTS.has(ext) ? path.join(baseDir, 'video') : baseDir);
         },
         filename: (_req, file, cb) => {
           const ext = path.extname(file.originalname).toLowerCase();
@@ -62,7 +101,7 @@ export class ScreensaverController {
       }),
       fileFilter: (_req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
-        if (ALLOWED_EXTS.includes(ext)) {
+        if (ALLOWED_EXTS.has(ext)) {
           cb(null, true);
         } else {
           cb(new BadRequestException(`File type "${ext}" is not allowed`), false);

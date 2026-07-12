@@ -4,6 +4,7 @@ import { UpdateStoreInfoDto } from './dto/store-info.dto';
 import { UpsertTerminalConfigDto } from './dto/terminal-config.dto';
 import { UpsertFiscalConfigDto } from './dto/fiscal-config.dto';
 import { AssignMerchantsDto } from './dto/assign-merchants.dto';
+import { SetKioskConfigDto } from './dto/kiosk-config.dto';
 
 @Controller('setup')
 export class SetupController {
@@ -15,10 +16,30 @@ export class SetupController {
     return this.setupService.checkReadiness();
   }
 
+  /** Verify service technician password. Returns { ok: true } or 401. */
+  @Post('service-auth')
+  @HttpCode(200)
+  serviceAuth(@Body() body: { password: string }) {
+    return this.setupService.verifyServicePassword(body.password ?? '');
+  }
+
   /** Full config snapshot: store info + all terminal configs + all fiscal configs */
   @Get()
   getSetup() {
     return this.setupService.getSetup();
+  }
+
+  /** Structured kiosk config: store info, active terminal (host/port/terminalId), fiscal tokens & tax groups */
+  @Get('kiosk-config')
+  getKioskConfig() {
+    return this.setupService.getKioskConfig();
+  }
+
+  /** Set full kiosk config in one request. Returns the saved config (same shape as GET kiosk-config). */
+  @Post('kiosk-config')
+  @HttpCode(200)
+  setKioskConfig(@Body() dto: SetKioskConfigDto) {
+    return this.setupService.setKioskConfig(dto);
   }
 
   /** Update store basic info (name, address, active_bank, alert_email) */

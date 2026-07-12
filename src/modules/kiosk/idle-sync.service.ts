@@ -75,6 +75,7 @@ export class IdleSyncService {
     product_subcategory?: number;
     product_division?: number;
     sale_id?: number;
+    child_product_barcode?: string | null;
   }): Promise<void> {
     await this.prisma.productUpdateQueue.create({
       data: {
@@ -102,6 +103,7 @@ export class IdleSyncService {
         product_subcategory: data.product_subcategory,
         product_division: data.product_division,
         sale_id: data.sale_id,
+        child_product_barcode: data.child_product_barcode ?? null,
       },
     });
   }
@@ -353,6 +355,53 @@ export class IdleSyncService {
                 product_left: sumResult._sum.products_left ?? 0,
               },
             });
+          }
+        }
+
+        // Handle combo product linking (sale_id=7)
+        if (saleId === 7 && item.child_product_barcode) {
+          const childProduct = await this.prisma.products.findUnique({
+            where: { barcode: item.child_product_barcode },
+            select: { id: true, product_left: true },
+          });
+          if (childProduct) {
+            // Remove stale combo record if the child changed
+            const existingMain = await this.prisma.products.findUnique({
+              where: { id: upserted.id },
+              select: { combo_id: true },
+            });
+            if (existingMain?.combo_id != null) {
+              await this.prisma.comboProducts.deleteMany({ where: { main_product_id: upserted.id } });
+              await this.prisma.products.update({ where: { id: upserted.id }, data: { combo_id: null } });
+            }
+            const combo = await this.prisma.comboProducts.create({
+              data: {
+                main_product_id: upserted.id,
+                child_product_id: childProduct.id,
+                isActive: Number(childProduct.product_left ?? 0) > 0,
+              },
+            });
+            await this.prisma.products.update({
+              where: { id: upserted.id },
+              data: { combo_id: combo.combo_id },
+            });
+            this.logger.log(
+              `Combo linked: product ${upserted.id} → child ${childProduct.id} (combo_id=${combo.combo_id})`,
+            );
+          } else {
+            this.logger.warn(
+              `Combo child barcode "${item.child_product_barcode}" not found; combo not created for product ${upserted.id}`,
+            );
+          }
+        } else if (saleId !== 7) {
+          // If sale_id changed away from 7, clean up any stale combo record
+          const existingMain = await this.prisma.products.findUnique({
+            where: { id: upserted.id },
+            select: { combo_id: true },
+          });
+          if (existingMain?.combo_id != null) {
+            await this.prisma.products.update({ where: { id: upserted.id }, data: { combo_id: null } });
+            await this.prisma.comboProducts.deleteMany({ where: { main_product_id: upserted.id } });
           }
         }
 

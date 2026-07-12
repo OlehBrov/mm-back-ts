@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class UpsertTerminalConfigDto {
   @IsOptional()
@@ -14,4 +14,9 @@ export class UpsertTerminalConfigDto {
   @Min(1)
   @Max(65535)
   port?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  terminal_id?: string;
 }

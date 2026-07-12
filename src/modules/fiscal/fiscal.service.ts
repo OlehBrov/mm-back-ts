@@ -11,6 +11,8 @@ export interface VchasnoTokenStatus {
   valid: boolean;
   res: number;
   errortxt: string;
+  edrpou?: string;
+  merchantName?: string;
   fisid?: string;
   isFis?: number;
   shift_status?: number;
@@ -18,6 +20,8 @@ export interface VchasnoTokenStatus {
 }
 
 export const RECEIPT_READY_EVENT = 'fiscal.receiptReady';
+export const MERCHANT_CODE_MISMATCH_EVENT = 'fiscal.merchantCodeMismatch';
+export const MAINTENANCE_CLEARED_EVENT = 'fiscal.maintenanceCleared';
 
 // Thrown when vchasno returns res_action=3 (manual intervention required — retry is useless)
 class FiscalFatalError extends Error {
@@ -36,6 +40,21 @@ class FiscalFatalError extends Error {
 export class FiscalService implements OnModuleInit {
   private readonly logger = new Logger(FiscalService.name);
   private readonly http: ReturnType<typeof axios.create>;
+  private maintenanceActive = false;
+
+  isMaintenanceActive(): boolean {
+    return this.maintenanceActive;
+  }
+
+  resetMaintenanceState(): void {
+    this.maintenanceActive = false;
+  }
+
+  clearMaintenanceMode(): void {
+    this.maintenanceActive = false;
+    this.events.emit(MAINTENANCE_CLEARED_EVENT);
+    this.logger.log('Maintenance mode cleared — kiosk is now active');
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -63,17 +82,129 @@ export class FiscalService implements OnModuleInit {
         return;
       }
       for (const cfg of configs) {
-        const status = await this.verifyToken(cfg.fiscal_token ?? '');
-        this.logger.log(
-          `Fiscal token [merchant=${cfg.merchant_id} "${cfg.merchant_name ?? ''}"] ` +
-          `valid=${status.valid}, fisid=${status.fisid ?? '?'}, ` +
-          `shift=${status.shift_status ?? '?'}, online=${status.online_status ?? '?'}` +
-          (status.valid ? '' : ` | error: ${status.errortxt}`),
-        );
+        await this.verifyAndSyncMerchantCode(cfg);
       }
     } catch (err) {
       this.logger.warn(`Token verification failed on startup: ${err instanceof Error ? err.message : err}`);
     }
+  }
+
+  /**
+   * Fetches fresh token data from Vchasno and persists edrpou + merchant name to DB.
+   * Does NOT check for mismatches or touch maintenance state — use verifyAndSyncMerchantCode for that.
+   */
+  async fetchAndSyncVchasnoData(cfg: {
+    merchant_id: string;
+    fiscal_token: string | null;
+  }): Promise<{ merchantName: string | null; edrpou: string | null; tokenValid: boolean }> {
+    const status = await this.verifyToken(cfg.fiscal_token ?? '');
+
+    const patch: Record<string, string> = {};
+    if (status.edrpou !== undefined) patch['vchason_merchant_code'] = status.edrpou;
+    if (status.merchantName !== undefined) patch['vchason_merchant_name'] = status.merchantName;
+
+    if (Object.keys(patch).length > 0) {
+      await this.prisma.fiscalConfig.update({
+        where: { merchant_id: cfg.merchant_id },
+        data: patch,
+      });
+    }
+
+    return {
+      merchantName: status.merchantName ?? null,
+      edrpou: status.edrpou ?? null,
+      tokenValid: status.valid,
+    };
+  }
+
+  /**
+   * Verifies a fiscal token, saves the returned edrpou + merchant name to vchason_* columns,
+   * and emits MERCHANT_CODE_MISMATCH_EVENT + sends email if configured values don't match Vchasno.
+   * Can be called on startup for all configs, or on-demand after config update.
+   */
+  async verifyAndSyncMerchantCode(cfg: {
+    merchant_id: string;
+    merchant_name: string | null;
+    merchant_code: string | null;
+    fiscal_token: string | null;
+  }): Promise<VchasnoTokenStatus> {
+    const status = await this.verifyToken(cfg.fiscal_token ?? '');
+
+    this.logger.log(
+      `Fiscal token [merchant=${cfg.merchant_id} "${cfg.merchant_name ?? ''}"] ` +
+      `valid=${status.valid}, edrpou=${status.edrpou ?? '?'}, name="${status.merchantName ?? '?'}", ` +
+      `fisid=${status.fisid ?? '?'}, shift=${status.shift_status ?? '?'}, online=${status.online_status ?? '?'}` +
+      (status.valid ? '' : ` | error: ${status.errortxt}`),
+    );
+
+    // Persist fresh Vchasno data — these columns are ONLY written here, never via admin API
+    const patch: Record<string, string> = {};
+    if (status.edrpou !== undefined) patch['vchason_merchant_code'] = status.edrpou;
+    if (status.merchantName !== undefined) patch['vchason_merchant_name'] = status.merchantName;
+    if (Object.keys(patch).length > 0) {
+      await this.prisma.fiscalConfig.update({
+        where: { merchant_id: cfg.merchant_id },
+        data: patch,
+      });
+    }
+
+    if (status.edrpou) {
+
+      const configuredCode = cfg.merchant_code?.trim() ?? '';
+      const vchasnoCode = status.edrpou.trim();
+
+      if (configuredCode && configuredCode !== vchasnoCode) {
+        const overdueEmail = this.config.get<string>('mailer.overdueEmail') ?? '';
+        const checkedAt = new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' });
+
+        this.maintenanceActive = true;
+        this.logger.error(
+          `MERCHANT CODE MISMATCH for ${cfg.merchant_id}: ` +
+          `configured="${configuredCode}", vchasno="${vchasnoCode}" — activating maintenance mode`,
+        );
+
+        this.events.emit(MERCHANT_CODE_MISMATCH_EVENT, {
+          merchantId: cfg.merchant_id,
+          configuredCode,
+          vchasnoCode,
+        });
+
+        if (overdueEmail) {
+          void this.mailer.sendMerchantCodeMismatchAlert(
+            {
+              merchantId: cfg.merchant_id,
+              merchantName: cfg.merchant_name ?? cfg.merchant_id,
+              configuredCode,
+              vchasnoCode,
+              checkedAt,
+            },
+            overdueEmail,
+          );
+        }
+      }
+    }
+
+    // Check merchant name — compare configured name with what Vchasno returns
+    if (cfg.merchant_name && status.merchantName) {
+      const configuredName = cfg.merchant_name.trim().toLowerCase();
+      const vchasnoName = status.merchantName.trim().toLowerCase();
+
+      if (configuredName !== vchasnoName) {
+        this.maintenanceActive = true;
+        this.logger.error(
+          `MERCHANT NAME MISMATCH for ${cfg.merchant_id}: ` +
+          `configured="${cfg.merchant_name}", vchasno="${status.merchantName}" — activating maintenance mode`,
+        );
+
+        this.events.emit(MERCHANT_CODE_MISMATCH_EVENT, {
+          merchantId: cfg.merchant_id,
+          configuredCode: cfg.merchant_name,
+          vchasnoCode: status.merchantName,
+        });
+      }
+    }
+
+    return status;
   }
 
   // ─── Token lookup ────────────────────────────────────────────────────────
@@ -103,6 +234,8 @@ export class FiscalService implements OnModuleInit {
         valid: res === 0,
         res,
         errortxt: (data['errortxt'] as string) ?? '',
+        edrpou: info['edrpou'] as string | undefined,
+        merchantName: info['name'] as string | undefined,
         fisid: info['fisid'] as string | undefined,
         isFis: info['isFis'] as number | undefined,
         shift_status: info['shift_status'] as number | undefined,
