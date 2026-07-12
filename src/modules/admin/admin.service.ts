@@ -110,10 +110,41 @@ export class AdminService {
 
   // ─── Sales ─────────────────────────────────────────────────────────────────
 
+  // Fallback descriptions for sale types that don't have sale_description filled in DB yet.
+  // TODO: move these into the DB (Sales.sale_description) and drop this map.
+  private static readonly SALE_DESCRIPTION_FALLBACK: Record<number, string> = {
+    0: 'Акція не застосовується',
+    1: 'Товар, що швидко псується. Не повертається',
+    2: 'Товар, що швидко псується. Повертається',
+    3: 'Акція для нових товарів',
+    4: 'Для товарів, що довго продаються',
+    6: 'Знижка для визначених товарів',
+    7: 'Акція для парних товарів',
+    8: 'Другий, такий самий товар зі знижкою',
+    9: 'Знижка на категорію товарів в магазині. Демонструється на заставці',
+  };
+
   async getSalesList() {
-    const data = await this.prisma.sales.findMany();
+    const data = await this.prisma.sales.findMany({ orderBy: { sale_custom_id: 'asc' } });
     if (!data.length) return { message: 'No sales available' };
-    return { message: 'success', data };
+
+    const enriched = data.map((sale) => ({
+      ...sale,
+      sale_description:
+        sale.sale_description?.trim() ||
+        (sale.sale_custom_id !== null ? AdminService.SALE_DESCRIPTION_FALLBACK[sale.sale_custom_id] : undefined) ||
+        'Опис відсутній',
+    }));
+
+    return { message: 'success', data: enriched };
+  }
+
+  async setSaleActive(sale_custom_id: number, is_active: boolean) {
+    const sale = await this.prisma.sales.findUnique({ where: { sale_custom_id } });
+    if (!sale) throw new NotFoundException(`No such sale with id ${sale_custom_id}`);
+
+    const updated = await this.prisma.sales.update({ where: { sale_custom_id }, data: { is_active } });
+    return { message: `Sale ${sale_custom_id} ${is_active ? 'activated' : 'deactivated'}`, data: updated };
   }
 
   async addSale(saleData: { sale_name: string; sale_custom_id: number; sale_discount_1?: number; sale_discount_2?: number; sale_discount_3?: number; sale_description?: string }) {

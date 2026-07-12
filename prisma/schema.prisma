@@ -162,6 +162,7 @@ model Sales {
   sale_discount_3  Decimal?       @db.Decimal(2, 2)
   sale_description String?        @db.NVarChar(256)
   sale_custom_id   Int?           @unique(map: "Sales_UNIQUE")
+  is_active        Boolean        @default(true)
   LoadProducts     LoadProducts[]
   Products         Products[]
 }
@@ -193,6 +194,14 @@ model Store {
   support_email                  String?        @db.NVarChar(255)
   feedback_email                 String?        @db.NVarChar(255)
   last_feedback_report_date      DateTime?      @db.Date
+  mail_host                      String?        @db.VarChar(255)
+  mail_port                      Int?
+  mail_secure                    Boolean?
+  mail_user                      String?        @db.VarChar(255)
+  mail_pass                      String?        @db.VarChar(255)
+  mail_from                      String?        @db.NVarChar(255)
+  mail_support_user              String?        @db.VarChar(255)
+  mail_support_pass              String?        @db.VarChar(255)
   screensaver                    String?        @db.VarChar(255)
   screensaver_mode               String?        @db.VarChar(20)
   screensaver_interval           Int?

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -75,6 +75,12 @@ export class SalesController {
   @Delete('delete')
   removeSale(@Body() body: { sale_custom_id: number }) {
     return this.adminService.removeSale(body.sale_custom_id);
+  }
+
+  @Patch(':saleCustomId/status')
+  @HttpCode(200)
+  setSaleActive(@Param('saleCustomId') saleCustomId: string, @Body() body: { is_active: boolean }) {
+    return this.adminService.setSaleActive(Number(saleCustomId), Boolean(body.is_active));
   }
 }
 

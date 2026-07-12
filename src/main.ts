@@ -98,9 +98,50 @@ async function seedServiceUsers() {
   await prisma.$disconnect();
 }
 
+// Backfills Store mail config from docker-compose MAIL_* env vars, but only for
+// fields that are still empty in the DB — never overwrites values already set
+// (e.g. edited later via the Setup screen).
+async function seedMailConfig() {
+  const logger = new Logger('Seed');
+  const authId = process.env.STORE_AUTH_ID;
+  if (!authId) return;
+
+  const prisma = new PrismaClient();
+  await prisma.$connect();
+
+  const store = await prisma.store.findUnique({ where: { auth_id: authId } });
+  if (!store) {
+    logger.warn(`Store with auth_id=${authId} not found, skipping mail config seed`);
+    await prisma.$disconnect();
+    return;
+  }
+
+  const data: Record<string, unknown> = {};
+  if (!store.mail_host && process.env.MAIL_HOST) data.mail_host = process.env.MAIL_HOST;
+  if (store.mail_port == null && process.env.MAIL_PORT) data.mail_port = parseInt(process.env.MAIL_PORT, 10);
+  if (store.mail_secure == null && process.env.MAIL_SECURE !== undefined) {
+    data.mail_secure = process.env.MAIL_SECURE === 'true';
+  }
+  if (!store.mail_user && process.env.MAIL_USER) data.mail_user = process.env.MAIL_USER;
+  if (!store.mail_pass && process.env.MAIL_PASS) data.mail_pass = process.env.MAIL_PASS;
+  if (!store.mail_from && process.env.MAIL_FROM) data.mail_from = process.env.MAIL_FROM;
+  if (!store.alert_email && process.env.MAIL_TO) data.alert_email = process.env.MAIL_TO;
+  if (!store.mail_support_user && process.env.MAIL_SUPPORT_USER) data.mail_support_user = process.env.MAIL_SUPPORT_USER;
+  if (!store.mail_support_pass && process.env.MAIL_SUPPORT_PASS) data.mail_support_pass = process.env.MAIL_SUPPORT_PASS;
+  if (!store.support_email && process.env.MAIL_SUPPORT_TO) data.support_email = process.env.MAIL_SUPPORT_TO;
+
+  if (Object.keys(data).length > 0) {
+    await prisma.store.update({ where: { id: store.id }, data });
+    logger.log(`Store: seeded mail config from env (${Object.keys(data).join(', ')})`);
+  }
+
+  await prisma.$disconnect();
+}
+
 async function bootstrap() {
   await runMigrations();
   await seedServiceUsers();
+  await seedMailConfig();
 
   // Disable default body parser so we can set a higher limit for image uploads
   const app = await NestFactory.create(AppModule, { bodyParser: false });

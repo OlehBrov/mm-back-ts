@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import { PrismaService } from '../../database/prisma.service';
 import { fiscalFatalTemplate, FiscalFatalContext } from './templates/fiscal-fatal.template';
 import { fiscalFailedTemplate, FiscalFailedContext } from './templates/fiscal-failed.template';
 import { fiscalQueueOverflowTemplate, FiscalQueueOverflowContext } from './templates/fiscal-queue-overflow.template';
@@ -9,33 +10,52 @@ import { overdueFiscalsTemplate, OverdueFiscalsContext } from './templates/overd
 import { merchantCodeMismatchTemplate, MerchantCodeMismatchContext } from './templates/merchant-code-mismatch.template';
 
 @Injectable()
-export class MailerService {
+export class MailerService implements OnModuleInit {
   private readonly logger = new Logger(MailerService.name);
-  private readonly transporter: Transporter;
-  private readonly from: string;
-  private readonly to: string;
-  readonly supportTo: string;
-  private readonly enabled: boolean;
+  private transporter!: Transporter;
+  private from = 'MicroMarket <noreply@localhost>';
+  private to = '';
+  supportTo = '';
+  private enabled = false;
 
-  constructor(private readonly config: ConfigService) {
-    const host = config.get<string>('mailer.host');
-    this.from = config.get<string>('mailer.from') ?? 'MicroMarket <noreply@localhost>';
-    this.to = config.get<string>('mailer.to') ?? '';
-    this.supportTo = config.get<string>('mailer.supportTo') ?? '';
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  /**
+   * Config precedence: Store row (DB, editable via /setup) > env vars (docker-compose) > defaults.
+   * Loaded once at boot, same as TerminalModule's DB-config pattern — not hot-reloaded, so
+   * changing Store.mail_* via the Setup screen requires a restart to take effect.
+   */
+  async onModuleInit() {
+    const authId = this.config.get<string>('store.authId');
+    const store = authId
+      ? await this.prisma.store.findUnique({ where: { auth_id: authId } })
+      : null;
+
+    const host = store?.mail_host || this.config.get<string>('mailer.host') || '';
+    const port = store?.mail_port ?? this.config.get<number>('mailer.port') ?? 587;
+    const secure = store?.mail_secure ?? this.config.get<boolean>('mailer.secure') ?? false;
+    const user = store?.mail_user || this.config.get<string>('mailer.user') || '';
+    const pass = store?.mail_pass || this.config.get<string>('mailer.pass') || '';
+
+    this.from = store?.mail_from || this.config.get<string>('mailer.from') || 'MicroMarket <noreply@localhost>';
+    this.to = store?.alert_email || this.config.get<string>('mailer.to') || '';
+    this.supportTo = store?.support_email || this.config.get<string>('mailer.supportTo') || '';
     this.enabled = !!host && !!this.to;
 
     if (!this.enabled) {
-      this.logger.warn('Mailer is disabled (MAIL_HOST or MAIL_TO not set). Alert emails will be skipped.');
+      this.logger.warn('Mailer is disabled (no mail host or alert recipient configured in DB/env). Alert emails will be skipped.');
+    } else {
+      this.logger.log(`Mailer configured from ${store?.mail_host ? 'DB' : 'env'}: host=${host}, to=${this.to}`);
     }
 
     this.transporter = nodemailer.createTransport({
-      host: host ?? 'localhost',
-      port: config.get<number>('mailer.port') ?? 587,
-      secure: config.get<boolean>('mailer.secure') ?? false,
-      auth: {
-        user: config.get<string>('mailer.user'),
-        pass: config.get<string>('mailer.pass'),
-      },
+      host: host || 'localhost',
+      port,
+      secure,
+      auth: { user, pass },
       tls: { rejectUnauthorized: false },
     });
   }
