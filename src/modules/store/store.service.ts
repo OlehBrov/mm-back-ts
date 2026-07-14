@@ -178,6 +178,9 @@ export class StoreService {
   // ─── GET /api/products/single ──────────────────────────────────────────────
 
   async getSingleProduct(store: Store, barcode: string) {
+    if (!barcode) {
+      return { message: 'No such product found', errStatus: 404 };
+    }
     const vatExcludeFilter =
       store.is_single_merchant && !store.use_VAT_by_default
         ? { OR: [{ is_VAT_Excise: { not: true } }, { is_VAT_Excise: null }] }
