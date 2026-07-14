@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Logger,
   NotFoundException,
   Post,
   Query,
@@ -21,6 +22,8 @@ import { SaveImageDto } from './dto/save-image.dto';
 
 @Controller('products')
 export class StoreController {
+  private readonly logger = new Logger(StoreController.name);
+
   constructor(private readonly storeService: StoreService) {}
 
   @Get()
@@ -45,10 +48,17 @@ export class StoreController {
   @Get('single')
   @UseGuards(StoreAuthGuard)
   async getSingleProduct(@CurrentStore() store: Store, @Query('barcode') barcode: string) {
+    this.logger.log(
+      `[SCAN] Incoming request: barcode=${JSON.stringify(barcode)} (type=${typeof barcode}) store_auth_id=${store?.auth_id}`,
+    );
     const result = await this.storeService.getSingleProduct(store, barcode);
     if ('errStatus' in result && result.errStatus === 404) {
+      this.logger.warn(`[SCAN] No product matched barcode=${JSON.stringify(barcode)}`);
       throw new NotFoundException(result.message);
     }
+    this.logger.log(
+      `[SCAN] Matched product: id=${result.product?.id} name=${result.product?.product_name} barcode=${result.product?.barcode} product_left=${result.product?.product_left}`,
+    );
     return result;
   }
 

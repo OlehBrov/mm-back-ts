@@ -178,36 +178,54 @@ export class StoreService {
   // ─── GET /api/products/single ──────────────────────────────────────────────
 
   async getSingleProduct(store: Store, barcode: string) {
+    this.logger.debug(
+      `[SCAN] getSingleProduct called: barcode=${JSON.stringify(barcode)} (type=${typeof barcode}, length=${barcode?.length})`,
+    );
+
     if (!barcode) {
+      this.logger.warn('[SCAN] Empty/missing barcode — returning 404 without querying Prisma');
       return { message: 'No such product found', errStatus: 404 };
     }
+
     const vatExcludeFilter =
       store.is_single_merchant && !store.use_VAT_by_default
         ? { OR: [{ is_VAT_Excise: { not: true } }, { is_VAT_Excise: null }] }
         : {};
-    const product = await this.prisma.products.findFirst({
-      where: {
-        OR: [
-          { barcode },
-          {
-            AdditionalBarcodes_Products_additional_barcodesToAdditionalBarcodes: {
-              OR: [
-                { additional_barcode_1: barcode },
-                { additional_barcode_2: barcode },
-                { additional_barcode_3: barcode },
-                { additional_barcode_4: barcode },
-                { additional_barcode_5: barcode },
-              ],
-            },
+
+    const where = {
+      OR: [
+        { barcode },
+        {
+          AdditionalBarcodes_Products_additional_barcodesToAdditionalBarcodes: {
+            OR: [
+              { additional_barcode_1: barcode },
+              { additional_barcode_2: barcode },
+              { additional_barcode_3: barcode },
+              { additional_barcode_4: barcode },
+              { additional_barcode_5: barcode },
+            ],
           },
-        ],
-        product_left: { not: null, gt: 0 },
-        ...vatExcludeFilter,
-      } as never,
+        },
+      ],
+      product_left: { not: null, gt: 0 },
+      ...vatExcludeFilter,
+    };
+    this.logger.debug(`[SCAN] Prisma where clause: ${JSON.stringify(where)}`);
+
+    const product = await this.prisma.products.findFirst({
+      where: where as never,
       include: {
         AdditionalBarcodes_Products_additional_barcodesToAdditionalBarcodes: true,
       },
     });
+
+    this.logger.debug(
+      `[SCAN] Prisma result: ${
+        product
+          ? `id=${product.id} name=${product.product_name} barcode=${product.barcode} product_left=${product.product_left} additional_barcodes_id=${product.additional_barcodes}`
+          : 'null (no match)'
+      }`,
+    );
 
     if (!product) {
       return { message: 'No such product found', errStatus: 404 };
