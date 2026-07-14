@@ -193,22 +193,26 @@ export class StoreService {
         : {};
 
     const where = {
-      OR: [
-        { barcode },
+      AND: [
         {
-          AdditionalBarcodes_Products_additional_barcodesToAdditionalBarcodes: {
-            OR: [
-              { additional_barcode_1: barcode },
-              { additional_barcode_2: barcode },
-              { additional_barcode_3: barcode },
-              { additional_barcode_4: barcode },
-              { additional_barcode_5: barcode },
-            ],
-          },
+          OR: [
+            { barcode },
+            {
+              AdditionalBarcodes_Products_additional_barcodesToAdditionalBarcodes: {
+                OR: [
+                  { additional_barcode_1: barcode },
+                  { additional_barcode_2: barcode },
+                  { additional_barcode_3: barcode },
+                  { additional_barcode_4: barcode },
+                  { additional_barcode_5: barcode },
+                ],
+              },
+            },
+          ],
         },
+        { product_left: { not: null, gt: 0 } },
+        vatExcludeFilter,
       ],
-      product_left: { not: null, gt: 0 },
-      ...vatExcludeFilter,
     };
     this.logger.debug(`[SCAN] Prisma where clause: ${JSON.stringify(where)}`);
 
