@@ -194,22 +194,7 @@ export class StoreService {
 
     const where = {
       AND: [
-        {
-          OR: [
-            { barcode },
-            {
-              AdditionalBarcodes_Products_additional_barcodesToAdditionalBarcodes: {
-                OR: [
-                  { additional_barcode_1: barcode },
-                  { additional_barcode_2: barcode },
-                  { additional_barcode_3: barcode },
-                  { additional_barcode_4: barcode },
-                  { additional_barcode_5: barcode },
-                ],
-              },
-            },
-          ],
-        },
+        { barcode },
         { product_left: { not: null, gt: 0 } },
         vatExcludeFilter,
       ],
@@ -218,15 +203,12 @@ export class StoreService {
 
     const product = await this.prisma.products.findFirst({
       where: where as never,
-      include: {
-        AdditionalBarcodes_Products_additional_barcodesToAdditionalBarcodes: true,
-      },
     });
 
     this.logger.debug(
       `[SCAN] Prisma result: ${
         product
-          ? `id=${product.id} name=${product.product_name} barcode=${product.barcode} product_left=${product.product_left} additional_barcodes_id=${product.additional_barcodes}`
+          ? `id=${product.id} name=${product.product_name} barcode=${product.barcode} product_left=${product.product_left}`
           : 'null (no match)'
       }`,
     );
