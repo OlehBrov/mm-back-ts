@@ -183,9 +183,6 @@ model Store {
   VAT_excise_merchant            String?        @db.VarChar(100)
   use_VAT_by_default             Boolean?
   is_single_merchant             Boolean?
-  default_merchant_taxgrp        Int?
-  VAT_merchant_taxgrp            Int?
-  VAT_excise_taxgrp              Int?
   default_merchant_name          String?        @db.NVarChar(100)
   VAT_merchant_name              String?        @db.NVarChar(100)
   store_address                  String?        @db.NVarChar(100)

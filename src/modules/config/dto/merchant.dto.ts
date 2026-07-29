@@ -1,4 +1,4 @@
-import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNumber, IsString } from 'class-validator';
 
 export class SetMerchantDto {
   @IsString()
@@ -12,14 +12,6 @@ export class SetMerchantDto {
 
   @IsBoolean()
   isSingleMerchant!: boolean;
-
-  @IsOptional()
-  @IsNumber()
-  defaultMerchantTaxgrp?: number;
-
-  @IsOptional()
-  @IsNumber()
-  vatExciseMerchantTaxgrp?: number;
 }
 
 export class AddStoreSaleDto {

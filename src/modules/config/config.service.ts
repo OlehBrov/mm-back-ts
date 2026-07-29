@@ -348,9 +348,6 @@ export class ConfigStoreService {
       vatExciseMerchant: store.VAT_excise_merchant,
       useVATbyDefault: store.use_VAT_by_default,
       isSingleMerchant: store.is_single_merchant,
-      noVATTaxGroup: store.default_merchant_taxgrp,
-      VATTaxGroup: store.VAT_merchant_taxgrp,
-      VATExciseTaxGroup: store.VAT_excise_taxgrp,
     };
   }
 
@@ -371,8 +368,6 @@ export class ConfigStoreService {
         VAT_excise_merchant: dto.vatExciseMerchant,
         use_VAT_by_default: dto.useVATbyDefault,
         is_single_merchant: dto.isSingleMerchant,
-        default_merchant_taxgrp: dto.defaultMerchantTaxgrp ?? 7,
-        VAT_excise_taxgrp: dto.vatExciseMerchantTaxgrp ?? 3,
       },
     });
 

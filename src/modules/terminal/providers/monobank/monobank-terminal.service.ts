@@ -317,6 +317,13 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
       return;
     }
 
+    if (!merchants[0].merchantId?.trim() || (merchants.length > 1 && !merchants[1].merchantId?.trim())) {
+      this.logger.warn(
+        `Terminal returned blank merchantId(s) — skipping DB sync: ${JSON.stringify(merchants)}`,
+      );
+      return;
+    }
+
     const isSingle = merchants.length === 1;
     const data = {
       default_merchant: merchants[0].merchantId,

@@ -22,9 +22,6 @@ interface StoreConfig {
   active_bank: string | null;
   default_merchant: string | null;
   VAT_excise_merchant: string | null;
-  default_merchant_taxgrp: number | null;
-  VAT_merchant_taxgrp: number | null;
-  VAT_excise_taxgrp: number | null;
 }
 
 interface EnrichedProduct extends CartProduct {
@@ -81,19 +78,28 @@ export class CartService {
         active_bank: true,
         default_merchant: true,
         VAT_excise_merchant: true,
-        default_merchant_taxgrp: true,
-        VAT_merchant_taxgrp: true,
-        VAT_excise_taxgrp: true,
       },
     });
 
     if (!store) throw new ForbiddenException('Store not found');
+
+    // taxgrp is configured per-merchant on the /setup screen (FiscalConfig.taxgrp),
+    // not on Store — look it up for whichever merchants are actually assigned.
+    const merchantIds = [store.default_merchant, store.VAT_excise_merchant].filter(
+      (id): id is string => !!id,
+    );
+    const fiscalConfigs = await this.prisma.fiscalConfig.findMany({
+      where: { merchant_id: { in: merchantIds } },
+      select: { merchant_id: true, taxgrp: true },
+    });
+    const taxGroupByMerchant = new Map(fiscalConfigs.map((fc) => [fc.merchant_id, fc.taxgrp]));
 
     // One UUID shared across all products in this session (both merchants)
     const internalCheckId = randomUUID();
     const { noVatProducts, vatProducts } = this.splitByTaxGroup(
       dto.cartProducts,
       store,
+      taxGroupByMerchant,
       internalCheckId,
     );
 
@@ -222,10 +228,18 @@ export class CartService {
   private splitByTaxGroup(
     products: CartProductDto[],
     store: StoreConfig,
+    taxGroupByMerchant: Map<string, number | null>,
     internalCheckId: string,
   ): { noVatProducts: EnrichedProduct[]; vatProducts: EnrichedProduct[] } {
     const noVatProducts: EnrichedProduct[] = [];
     const vatProducts: EnrichedProduct[] = [];
+
+    // One taxgrp per merchant (FiscalConfig.taxgrp, set on /setup) — excise and
+    // non-excise VAT products under the same merchant share the same code.
+    const noVatTaxGroup =
+      (store.default_merchant ? taxGroupByMerchant.get(store.default_merchant) : null) ?? 0;
+    const vatTaxGroup =
+      (store.VAT_excise_merchant ? taxGroupByMerchant.get(store.VAT_excise_merchant) : null) ?? 0;
 
     for (const p of products) {
       const base: Omit<EnrichedProduct, 'taxGroup'> = {
@@ -243,23 +257,16 @@ export class CartService {
       };
 
       if (p.merchant === 'both') {
-        if (p.is_VAT_Excise && p.excise_product) {
-          vatProducts.push({ ...base, taxGroup: store.VAT_excise_taxgrp ?? 0 });
-        } else if (p.is_VAT_Excise && !p.excise_product) {
-          vatProducts.push({ ...base, taxGroup: store.VAT_merchant_taxgrp ?? 0 });
+        if (p.is_VAT_Excise) {
+          vatProducts.push({ ...base, taxGroup: vatTaxGroup });
         } else {
-          noVatProducts.push({ ...base, taxGroup: store.default_merchant_taxgrp ?? 0 });
+          noVatProducts.push({ ...base, taxGroup: noVatTaxGroup });
         }
       } else if (p.merchant === 'VAT') {
-        vatProducts.push({
-          ...base,
-          taxGroup: p.excise_product
-            ? (store.VAT_excise_taxgrp ?? 0)
-            : (store.VAT_merchant_taxgrp ?? 0),
-        });
+        vatProducts.push({ ...base, taxGroup: vatTaxGroup });
       } else {
         // "noVAT" or undefined → goes to default_merchant
-        noVatProducts.push({ ...base, taxGroup: store.default_merchant_taxgrp ?? 0 });
+        noVatProducts.push({ ...base, taxGroup: noVatTaxGroup });
       }
     }
 
