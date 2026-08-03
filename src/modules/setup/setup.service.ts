@@ -43,20 +43,28 @@ export class SetupService {
       missing.push('Не обрано активний банк');
     } else {
       const tc = terminalConfigs.find((t) => t.bank === store.active_bank);
-      if (!tc?.host) missing.push(`IP-адресу термінала ${store.active_bank} не вказано`);
-      if (!tc?.port) missing.push(`Порт термінала ${store.active_bank} не вказано`);
+      if (!tc?.host)
+        missing.push(`IP-адресу термінала ${store.active_bank} не вказано`);
+      if (!tc?.port)
+        missing.push(`Порт термінала ${store.active_bank} не вказано`);
     }
 
     if (!store?.default_merchant) {
       missing.push('Основного мерчанта не призначено');
     } else {
-      const fc = fiscalConfigs.find((f) => f.merchant_id === store.default_merchant);
-      if (!fc?.fiscal_token) missing.push('Токен Вчасно Каса для основного мерчанта відсутній');
+      const fc = fiscalConfigs.find(
+        (f) => f.merchant_id === store.default_merchant,
+      );
+      if (!fc?.fiscal_token)
+        missing.push('Токен Вчасно Каса для основного мерчанта відсутній');
     }
 
     if (store?.VAT_excise_merchant) {
-      const fc = fiscalConfigs.find((f) => f.merchant_id === store.VAT_excise_merchant);
-      if (!fc?.fiscal_token) missing.push('Токен Вчасно Каса для ПДВ-мерчанта відсутній');
+      const fc = fiscalConfigs.find(
+        (f) => f.merchant_id === store.VAT_excise_merchant,
+      );
+      if (!fc?.fiscal_token)
+        missing.push('Токен Вчасно Каса для ПДВ-мерчанта відсутній');
     }
 
     return { ready: missing.length === 0, missing };
@@ -114,14 +122,15 @@ export class SetupService {
     ]);
 
     const activeBank = store?.active_bank ?? null;
-    const activeTc = terminalConfigs.find(t => t.bank === activeBank) ?? null;
+    const activeTc = terminalConfigs.find((t) => t.bank === activeBank) ?? null;
 
     const noVatMerchantId = store?.default_merchant ?? null;
     const vatMerchantId = store?.VAT_excise_merchant ?? null;
 
-    const noVatFc = fiscalConfigs.find(f => f.merchant_id === noVatMerchantId) ?? null;
+    const noVatFc =
+      fiscalConfigs.find((f) => f.merchant_id === noVatMerchantId) ?? null;
     const vatFc = vatMerchantId
-      ? (fiscalConfigs.find(f => f.merchant_id === vatMerchantId) ?? null)
+      ? (fiscalConfigs.find((f) => f.merchant_id === vatMerchantId) ?? null)
       : null;
 
     // Fetch fresh data from Vchasno in parallel (skipped after POST /kiosk-config — data already synced)
@@ -129,17 +138,27 @@ export class SetupService {
       ? [null, null]
       : await Promise.all([
           noVatFc
-            ? this.fiscal.fetchAndSyncVchasnoData({ merchant_id: noVatFc.merchant_id, fiscal_token: noVatFc.fiscal_token })
+            ? this.fiscal.fetchAndSyncVchasnoData({
+                merchant_id: noVatFc.merchant_id,
+                fiscal_token: noVatFc.fiscal_token,
+              })
             : Promise.resolve(null),
           vatFc
-            ? this.fiscal.fetchAndSyncVchasnoData({ merchant_id: vatFc.merchant_id, fiscal_token: vatFc.fiscal_token })
+            ? this.fiscal.fetchAndSyncVchasnoData({
+                merchant_id: vatFc.merchant_id,
+                fiscal_token: vatFc.fiscal_token,
+              })
             : Promise.resolve(null),
         ]);
 
     const buildMerchantResponse = (
       fc: typeof noVatFc,
       merchantId: string | null,
-      vchasno: { merchantName: string | null; edrpou: string | null; tokenValid: boolean } | null,
+      vchasno: {
+        merchantName: string | null;
+        edrpou: string | null;
+        tokenValid: boolean;
+      } | null,
     ) => {
       if (!fc || !merchantId) return null;
       return {
@@ -149,9 +168,11 @@ export class SetupService {
         token: fc.fiscal_token ?? null,
         taxgrp: fc.taxgrp ?? null,
         verification: {
-          vchasno_merchant_name: vchasno?.merchantName ?? fc.vchason_merchant_name ?? null,
+          vchasno_merchant_name:
+            vchasno?.merchantName ?? fc.vchason_merchant_name ?? null,
           local_merchant_name: fc.merchant_name ?? null,
-          vchasno_merchant_code: vchasno?.edrpou ?? fc.vchason_merchant_code ?? null,
+          vchasno_merchant_code:
+            vchasno?.edrpou ?? fc.vchason_merchant_code ?? null,
           local_merchant_code: fc.merchant_code ?? null,
           token_valid: vchasno?.tokenValid ?? null,
         },
@@ -222,7 +243,9 @@ export class SetupService {
         },
         update: {
           merchant_name: dto.fiscal.noVat.merchantName,
-          ...(dto.fiscal.noVat.merchantCode !== undefined && { merchant_code: dto.fiscal.noVat.merchantCode }),
+          ...(dto.fiscal.noVat.merchantCode !== undefined && {
+            merchant_code: dto.fiscal.noVat.merchantCode,
+          }),
           fiscal_token: dto.fiscal.noVat.token,
           taxgrp: dto.fiscal.noVat.taxgrp,
         },
@@ -242,7 +265,9 @@ export class SetupService {
               },
               update: {
                 merchant_name: dto.fiscal.vat.merchantName,
-                ...(dto.fiscal.vat.merchantCode !== undefined && { merchant_code: dto.fiscal.vat.merchantCode }),
+                ...(dto.fiscal.vat.merchantCode !== undefined && {
+                  merchant_code: dto.fiscal.vat.merchantCode,
+                }),
                 fiscal_token: dto.fiscal.vat.token,
                 taxgrp: dto.fiscal.vat.taxgrp,
               },
@@ -325,9 +350,13 @@ export class SetupService {
       select: { active_bank: true },
     });
     const activeBank =
-      store?.active_bank ?? this.config.get<string>('terminal.provider') ?? 'privatbank';
+      store?.active_bank ??
+      this.config.get<string>('terminal.provider') ??
+      'privatbank';
 
-    const terminalConfig = await this.prisma.terminalConfig.findUnique({ where: { bank } });
+    const terminalConfig = await this.prisma.terminalConfig.findUnique({
+      where: { bank },
+    });
 
     if (bank !== activeBank) {
       return {
@@ -354,7 +383,11 @@ export class SetupService {
   async assignMerchants(
     defaultMerchant: string,
     vatMerchant: string | null,
-  ): Promise<{ ok: boolean; default_merchant: string; vat_merchant: string | null }> {
+  ): Promise<{
+    ok: boolean;
+    default_merchant: string;
+    vat_merchant: string | null;
+  }> {
     const isSingle = vatMerchant === null;
 
     await this.prisma.store.updateMany({
@@ -379,7 +412,11 @@ export class SetupService {
       });
     }
 
-    return { ok: true, default_merchant: defaultMerchant, vat_merchant: vatMerchant };
+    return {
+      ok: true,
+      default_merchant: defaultMerchant,
+      vat_merchant: vatMerchant,
+    };
   }
 
   async upsertFiscalConfig(
@@ -407,12 +444,16 @@ export class SetupService {
   }
 
   async deleteFiscalConfig(merchantId: string) {
-    await this.prisma.fiscalConfig.delete({ where: { merchant_id: merchantId } });
+    await this.prisma.fiscalConfig.delete({
+      where: { merchant_id: merchantId },
+    });
     return { deleted: merchantId };
   }
 
   async verifyServicePassword(password: string): Promise<{ ok: boolean }> {
-    const users = await this.prisma.serviceUsers.findMany({ select: { password: true } });
+    const users = await this.prisma.serviceUsers.findMany({
+      select: { password: true },
+    });
     for (const user of users) {
       if (await bcrypt.compare(password, user.password)) {
         return { ok: true };

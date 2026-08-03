@@ -1,8 +1,16 @@
 import { Body, Controller, Get, HttpCode, Patch, Post } from '@nestjs/common';
 import { ConfigStoreService } from './config.service';
 import { AddCategoryDto, EditCategoryDto } from './dto/category.dto';
-import { AddSubcategoryDto, EditSubcategoryDto, MoveSubcategoryDto } from './dto/subcategory.dto';
-import { AddCategoryImageDto, AddStoreSaleDto, SetMerchantDto } from './dto/merchant.dto';
+import {
+  AddSubcategoryDto,
+  EditSubcategoryDto,
+  MoveSubcategoryDto,
+} from './dto/subcategory.dto';
+import {
+  AddCategoryImageDto,
+  AddStoreSaleDto,
+  SetMerchantDto,
+} from './dto/merchant.dto';
 
 @Controller('config')
 export class ConfigController {

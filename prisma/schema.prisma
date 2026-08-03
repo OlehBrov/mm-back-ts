@@ -303,12 +303,12 @@ model ProductUpdateQueue {
   id                  Int       @id(map: "ProductUpdateQueue_PK") @default(autoincrement())
   barcode             String    @db.VarChar(256)
   cat_subcat_id       Int
-  product_name        String?   @db.VarChar(256)
+  product_name        String?   @db.NVarChar(256)
   product_code        String?   @db.VarChar(256)
   measure             String?   @db.VarChar(64)
-  product_name_ru     String?   @db.VarChar(256)
-  product_name_ua     String?   @db.VarChar(256)
-  product_description String?   @db.VarChar(256)
+  product_name_ru     String?   @db.NVarChar(256)
+  product_name_ua     String?   @db.NVarChar(256)
+  product_description String?   @db.NVarChar(256)
   product_image       String?   @db.VarChar(255)
   product_price       Decimal?  @db.Decimal(10, 2)
   product_discount    Decimal?  @db.Decimal(10, 2)
@@ -336,7 +336,7 @@ model SubcategoryMoveQueue {
   cat_1C_id      Int
   subcat_1C_id   Int
   new_cat_1C_id  Int
-  subcat_name    String?   @db.VarChar(100)
+  subcat_name    String?   @db.NVarChar(100)
   status         String    @default("pending", map: "DF__SubcatMvQ__status") @db.VarChar(20)
   created_at     DateTime  @default(now(), map: "DF__SubcatMvQ__create") @db.DateTime
   processed_at   DateTime? @db.DateTime
