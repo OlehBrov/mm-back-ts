@@ -10,7 +10,7 @@ datasource db {
 
 model Categories {
   id                                                      Int             @id(map: "Categories_PK") @default(autoincrement())
-  category_name                                           String          @db.VarChar(25)
+  category_name                                           String          @db.NVarChar(25)
   category_discount                                       Decimal?        @db.Decimal(10, 2)
   category_image                                          String?         @db.VarChar(100)
   cat_1C_id                                               Int             @unique(map: "Categories_UNIQUE")
@@ -240,7 +240,7 @@ model FiscalConfig {
 
 model Subcategories {
   id                                                   Int        @id(map: "Subcategories_PK") @default(autoincrement())
-  subcategory_name                                     String?    @db.VarChar(100)
+  subcategory_name                                     String?    @db.NVarChar(100)
   category_ref                                         Int
   subcategory_discount                                 Decimal?   @db.Decimal(10, 2)
   subcat_1C_id                                         Int?       @unique(map: "Subcategories_UNIQUE")
@@ -305,7 +305,7 @@ model ProductUpdateQueue {
   cat_subcat_id       Int
   product_name        String?   @db.NVarChar(256)
   product_code        String?   @db.VarChar(256)
-  measure             String?   @db.VarChar(64)
+  measure             String?   @db.NVarChar(64)
   product_name_ru     String?   @db.NVarChar(256)
   product_name_ua     String?   @db.NVarChar(256)
   product_description String?   @db.NVarChar(256)
