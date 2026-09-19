@@ -16,8 +16,6 @@ export default () => ({
     ingenicoPort: parseInt(process.env.INGENICO_PORT ?? '2000', 10),
     ingenicoMerchIdx: parseInt(process.env.INGENICO_MERCH_IDX ?? '1', 10),
     ingenicoHeartbeatMs: parseInt(process.env.INGENICO_HEARTBEAT_MS ?? '8000', 10),
-    ingenicoEcrStatus: parseInt(process.env.INGENICO_ECR_STATUS ?? '2', 10),
-    ingenicoIdleText: process.env.INGENICO_IDLE_TEXT ?? '',
     paymentTimeoutMs: parseInt(process.env.TERMINAL_PAYMENT_TIMEOUT_MS ?? '60000', 10),
     connectionTimeoutMs: parseInt(process.env.TERMINAL_CONNECTION_TIMEOUT_MS ?? '5000', 10),
     reconnectIntervalMs: parseInt(process.env.TERMINAL_RECONNECT_INTERVAL_MS ?? '30000', 10),

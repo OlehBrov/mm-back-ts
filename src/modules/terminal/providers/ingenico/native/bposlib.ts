@@ -35,9 +35,6 @@ const TrnStatusFn = lib.func('uint8 BPOSLib_TrnStatus()');
 const AmountFn = lib.func('int BPOSLib_Amount()');
 const InvoiceNumFn = lib.func('int BPOSLib_InvoiceNum()');
 const ExchangeStatusesFn = lib.func('int BPOSLib_ExchangeStatuses(uint8)');
-const SetControlModeFn = lib.func('int BPOSLib_SetControlMode(bool)');
-const SetLineFn = lib.func('int BPOSLib_SetLine(uint8, uint8, char*, uint8)');
-const DisplayTextFn = lib.func('int BPOSLib_DisplayText(uint8)');
 const TermStatusFn = lib.func('uint8 BPOSLib_TermStatus()');
 const LastErrorCodeFn = lib.func('uint8 BPOSLib_LastErrorCode()');
 const RRNFn = lib.func('int BPOSLib_RRN(char*)');
@@ -78,25 +75,6 @@ export const BPOSLib = {
       );
     }),
   termStatus: (): number => TermStatusFn(),
-  // Display/keyboard "control mode" (UNATTENDED POS): the ECR draws text on the terminal.
-  setControlMode: (on: boolean): Promise<number> =>
-    new Promise((resolve, reject) => {
-      SetControlModeFn.async(on, (err: Error | null, result: number) =>
-        err ? reject(err) : resolve(result),
-      );
-    }),
-  setLine: (row: number, col: number, text: Buffer, invert: number): Promise<number> =>
-    new Promise((resolve, reject) => {
-      SetLineFn.async(row, col, text, invert, (err: Error | null, result: number) =>
-        err ? reject(err) : resolve(result),
-      );
-    }),
-  displayText: (beep: number): Promise<number> =>
-    new Promise((resolve, reject) => {
-      DisplayTextFn.async(beep, (err: Error | null, result: number) =>
-        err ? reject(err) : resolve(result),
-      );
-    }),
   confirm: (): number => ConfirmFn(),
   cancel: (): number => CancelFn(),
   lastErrorCode: (): number => LastErrorCodeFn(),
