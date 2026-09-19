@@ -37,6 +37,7 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
   private isReconnecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private saleInProgress = false;
+  private pinging = false;
   private hasInitialized = false;
 
   // Set to true by terminal.module factory before onModuleInit fires.
@@ -140,15 +141,41 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
 
     this.saleInProgress = true;
     try {
-      const startCode = BPOSLib.purchase(req.amount, 0, merchIdx);
+      // A status ping may still be in flight; the terminal handles one operation at a time.
+      const waitDeadline = Date.now() + this.connectionTimeoutMs * 2;
+      while (this.pinging && Date.now() < waitDeadline) {
+        await new Promise<void>((r) => setTimeout(r, 100));
+      }
+
+      // The link may have been lost while idle — re-open it before starting the sale.
+      if (this.terminalStatus !== 'online') {
+        BPOSLib.commClose();
+        await this.connect();
+        if (this.getStatus() !== 'online') {
+          throw new Error('Ingenico terminal is not reachable');
+        }
+      }
+
+      this.logger.log(
+        `Purchase start: amount=${req.amount} discount=0 merchIdx=${merchIdx} (requested discount=${req.discount})`,
+      );
+      const startCode = await BPOSLib.purchase(req.amount, 0, merchIdx);
       if (startCode !== 0) {
-        throw new Error(`Purchase failed to start (code ${startCode})`);
+        const desc = BPOSLib.lastErrorDescription();
+        this.logger.error(
+          `Purchase failed to start: code=${startCode} lastErrorCode=${BPOSLib.lastErrorCode()} "${desc}"`,
+        );
+        throw new Error(`Purchase failed to start (code ${startCode}): ${desc}`);
       }
 
       const lastResult = await this.pollUntilDone(this.paymentTimeoutMs);
+      this.logger.log(`Purchase finished: LastResult=${lastResult}`);
 
       if (lastResult !== 0) {
         const desc = BPOSLib.lastErrorDescription() || `LastResult=${lastResult}`;
+        this.logger.warn(
+          `Purchase not approved: lastErrorCode=${BPOSLib.lastErrorCode()} "${desc}"`,
+        );
         const err = new Error(`Payment declined: ${desc}`);
         (err as NodeJS.ErrnoException).code = 'PAYMENT_CANCELLED';
         throw err;
@@ -195,15 +222,32 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     return [{ merchantId: String(this.defaultMerchIdx) }];
   }
 
+  // Polled by the kiosk frontend every few seconds. Uses the vendor Ping() (link to the
+  // terminal only) — NOT CheckConnection(), which makes the terminal dial the bank and
+  // keeps it busy (LastResult=2), which collided with Purchase and showed "Зв'язок з банком".
   async checkConnection(): Promise<boolean> {
-    if (this.saleInProgress) return this.terminalStatus === 'online';
+    if (this.saleInProgress || this.pinging) return this.terminalStatus === 'online';
+    this.pinging = true;
     try {
-      const result = BPOSLib.checkConnection(this.defaultMerchIdx);
-      this.setStatus(result === 0 ? 'online' : 'offline');
-      return result === 0;
-    } catch {
+      // Link was lost earlier: re-open it instead of staying offline forever.
+      if (this.terminalStatus !== 'online') {
+        BPOSLib.commClose();
+        await this.connect();
+        return this.getStatus() === 'online';
+      }
+
+      const code = await BPOSLib.ping();
+      if (code === 0) return true;
+
+      this.logger.warn(`Ping failed: code=${code} "${BPOSLib.lastErrorDescription()}"`);
       this.setStatus('offline');
       return false;
+    } catch (err) {
+      this.logger.warn(`Ping threw: ${String(err)}`);
+      this.setStatus('offline');
+      return false;
+    } finally {
+      this.pinging = false;
     }
   }
 
