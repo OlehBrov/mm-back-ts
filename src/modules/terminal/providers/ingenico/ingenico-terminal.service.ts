@@ -89,6 +89,7 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     await this.connect();
 
     if (this.heartbeatMs > 0) {
+      this.logger.log(`Heartbeat every ${this.heartbeatMs} ms, ECR status ${this.ecrStatus}`);
       this.heartbeatTimer = setInterval(() => {
         this.heartbeat().catch((err: unknown) => this.logger.warn(`Heartbeat threw: ${String(err)}`));
       }, this.heartbeatMs);
