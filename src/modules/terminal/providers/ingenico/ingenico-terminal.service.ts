@@ -10,6 +10,7 @@ import {
 import { TERMINAL_STATUS_EVENT } from '../../constants';
 import { PrismaService } from '../../../../database/prisma.service';
 import { BPOSLib } from './native/bposlib';
+import { encodeCp1251 } from './cp1251';
 
 // Ingenico SELF2000, BPOS1 protocol over TCP (vendor "pure_c" Linux library, see
 // native/BPOSLib.h). Unlike PrivatBank/MonoBank this is not a JSON socket protocol
@@ -43,6 +44,8 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private heartbeatFailing = false;
   private lastTermStatus = -1;
+  private controlMode = false;
+  private idleTextFailing = false;
   private hasInitialized = false;
 
   // Set to true by terminal.module factory before onModuleInit fires.
@@ -57,6 +60,9 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
   // 3 customer in progress, 4 maintenance, 5 not connected. The terminal's idle screen may
   // depend on it — configurable so it can be tried on the real terminal.
   private readonly ecrStatus: number;
+  // Experimental: text lines ('|'-separated) drawn on the idle terminal via control mode.
+  // Empty = feature off. Lines go out as WIN1251; whether the terminal font shows Cyrillic is unverified.
+  private readonly idleLines: string[];
   private readonly paymentTimeoutMs: number;
   private readonly connectionTimeoutMs: number;
   private readonly reconnectIntervalMs: number;
@@ -72,6 +78,10 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     this.defaultMerchIdx = config.get<number>('terminal.ingenicoMerchIdx') ?? 1;
     this.heartbeatMs = config.get<number>('terminal.ingenicoHeartbeatMs') ?? 8000;
     this.ecrStatus = config.get<number>('terminal.ingenicoEcrStatus') ?? 2;
+    this.idleLines = (config.get<string>('terminal.ingenicoIdleText') ?? '')
+      .split('|')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
     this.paymentTimeoutMs = config.get<number>('terminal.paymentTimeoutMs') ?? 60000;
     this.connectionTimeoutMs = config.get<number>('terminal.connectionTimeoutMs') ?? 5000;
     this.reconnectIntervalMs = config.get<number>('terminal.reconnectIntervalMs') ?? 30000;
@@ -121,6 +131,7 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
           this.lastTermStatus = termStatus;
           this.logger.log(`Terminal status (TermStatus)=${termStatus}`);
         }
+        if (this.idleLines.length > 0) await this.showIdleText();
         return;
       }
 
@@ -181,6 +192,34 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     }
   }
 
+  // The terminal falls back to "ECR not connected" 15 s after the last SetLine/DisplayText, so
+  // this is refreshed on every heartbeat tick. Failures are logged once, never thrown — the
+  // idle text must not affect availability or payments.
+  private async showIdleText(): Promise<void> {
+    try {
+      if (!this.controlMode) {
+        const code = await BPOSLib.setControlMode(true);
+        if (code !== 0) throw new Error(this.describeFailure(`SetControlMode(true) code=${code}`));
+        this.controlMode = true;
+      }
+      for (const [i, line] of this.idleLines.entries()) {
+        // Row numbering is undocumented; starting at 1 avoids an out-of-range 0.
+        const code = await BPOSLib.setLine(i + 1, 0, encodeCp1251(line), 0);
+        if (code !== 0) throw new Error(this.describeFailure(`SetLine(${i + 1}) code=${code}`));
+      }
+      const code = await BPOSLib.displayText(0);
+      if (code !== 0) throw new Error(this.describeFailure(`DisplayText code=${code}`));
+      if (this.idleTextFailing) this.logger.log('Idle text recovered');
+      this.idleTextFailing = false;
+    } catch (err) {
+      this.controlMode = false;
+      if (!this.idleTextFailing) {
+        this.idleTextFailing = true;
+        this.logger.warn(`Idle text failed: ${String(err)}`);
+      }
+    }
+  }
+
   private async pollUntilDone(deadlineMs: number): Promise<number> {
     const deadline = Date.now() + deadlineMs;
     while (Date.now() < deadline) {
@@ -213,6 +252,12 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
       await this.connect();
       if (this.getStatus() !== 'online') {
         throw new Error('Ingenico terminal is not reachable');
+      }
+
+      // Control mode cannot be used during a financial transaction — leave it first.
+      if (this.idleLines.length > 0) {
+        await BPOSLib.setControlMode(false).catch(() => undefined);
+        this.controlMode = false;
       }
 
       this.logger.log(
