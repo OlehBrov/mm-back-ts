@@ -13,6 +13,8 @@ export default () => ({
     host: process.env.CLIENT_HOST,
     privatbankPort: parseInt(process.env.PRIVATBANK_PORT ?? '2000', 10),
     monobankPort: parseInt(process.env.MONOBANK_PORT ?? '3000', 10),
+    ingenicoPort: parseInt(process.env.INGENICO_PORT ?? '2000', 10),
+    ingenicoMerchIdx: parseInt(process.env.INGENICO_MERCH_IDX ?? '1', 10),
     paymentTimeoutMs: parseInt(process.env.TERMINAL_PAYMENT_TIMEOUT_MS ?? '60000', 10),
     connectionTimeoutMs: parseInt(process.env.TERMINAL_CONNECTION_TIMEOUT_MS ?? '5000', 10),
     reconnectIntervalMs: parseInt(process.env.TERMINAL_RECONNECT_INTERVAL_MS ?? '30000', 10),
