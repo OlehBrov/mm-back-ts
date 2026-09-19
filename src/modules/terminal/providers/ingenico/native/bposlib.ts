@@ -34,6 +34,8 @@ const ResponseCodeFn = lib.func('int BPOSLib_ResponseCode()');
 const TrnStatusFn = lib.func('uint8 BPOSLib_TrnStatus()');
 const AmountFn = lib.func('int BPOSLib_Amount()');
 const InvoiceNumFn = lib.func('int BPOSLib_InvoiceNum()');
+const ExchangeStatusesFn = lib.func('int BPOSLib_ExchangeStatuses(uint8)');
+const TermStatusFn = lib.func('uint8 BPOSLib_TermStatus()');
 const LastErrorCodeFn = lib.func('uint8 BPOSLib_LastErrorCode()');
 const RRNFn = lib.func('int BPOSLib_RRN(char*)');
 const AuthCodeFn = lib.func('int BPOSLib_AuthCode(char*)');
@@ -64,6 +66,15 @@ export const BPOSLib = {
         err ? reject(err) : resolve(result),
       );
     }),
+  // ECR heartbeat: tells the terminal "ECR is alive" (status 2 = normal mode) and returns the
+  // terminal status. Without it the terminal shows "ECR not connected" after 15 s.
+  exchangeStatuses: (ecrStatus: number): Promise<number> =>
+    new Promise((resolve, reject) => {
+      ExchangeStatusesFn.async(ecrStatus, (err: Error | null, result: number) =>
+        err ? reject(err) : resolve(result),
+      );
+    }),
+  termStatus: (): number => TermStatusFn(),
   confirm: (): number => ConfirmFn(),
   cancel: (): number => CancelFn(),
   lastErrorCode: (): number => LastErrorCodeFn(),

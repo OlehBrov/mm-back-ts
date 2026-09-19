@@ -38,7 +38,11 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
   private reconnectTimer: NodeJS.Timeout | null = null;
   private saleInProgress = false;
   private cancelRequested = false;
+  // True while a status probe / heartbeat is talking to the terminal (one operation at a time).
   private pinging = false;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private heartbeatFailing = false;
+  private lastTermStatus = -1;
   private hasInitialized = false;
 
   // Set to true by terminal.module factory before onModuleInit fires.
@@ -47,6 +51,8 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
   private host: string;
   private port: number;
   private readonly defaultMerchIdx: number;
+  // 0 disables the heartbeat (link is then opened per sale / per status probe only).
+  private readonly heartbeatMs: number;
   private readonly paymentTimeoutMs: number;
   private readonly connectionTimeoutMs: number;
   private readonly reconnectIntervalMs: number;
@@ -60,6 +66,7 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     this.host = config.get<string>('terminal.host') ?? '127.0.0.1';
     this.port = config.get<number>('terminal.ingenicoPort') ?? 2000;
     this.defaultMerchIdx = config.get<number>('terminal.ingenicoMerchIdx') ?? 1;
+    this.heartbeatMs = config.get<number>('terminal.ingenicoHeartbeatMs') ?? 8000;
     this.paymentTimeoutMs = config.get<number>('terminal.paymentTimeoutMs') ?? 60000;
     this.connectionTimeoutMs = config.get<number>('terminal.connectionTimeoutMs') ?? 5000;
     this.reconnectIntervalMs = config.get<number>('terminal.reconnectIntervalMs') ?? 30000;
@@ -75,12 +82,53 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
 
     BPOSLib.initialize();
     await this.connect();
+
+    if (this.heartbeatMs > 0) {
+      this.heartbeatTimer = setInterval(() => {
+        this.heartbeat().catch((err: unknown) => this.logger.warn(`Heartbeat threw: ${String(err)}`));
+      }, this.heartbeatMs);
+    }
   }
 
   async onModuleDestroy() {
     if (!this.shouldConnect) return;
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.clearReconnect();
     BPOSLib.commClose();
+  }
+
+  // Keeps the terminal from showing "ECR not connected" (it times out after 15 s without ECR
+  // traffic) and keeps the link alive between sales. Best-effort: a failed heartbeat only
+  // reopens the link — availability is decided by whether the TCP open succeeds.
+  private async heartbeat(): Promise<void> {
+    if (this.saleInProgress || this.pinging) return;
+    this.pinging = true;
+    try {
+      const code = await BPOSLib.exchangeStatuses(2);
+      const ok = code === 0 && (await this.pollUntilDone(this.connectionTimeoutMs)) === 0;
+      if (ok) {
+        if (this.heartbeatFailing) this.logger.log('Heartbeat recovered');
+        this.heartbeatFailing = false;
+        this.setStatus('online');
+        const termStatus = BPOSLib.termStatus();
+        if (termStatus !== this.lastTermStatus) {
+          this.lastTermStatus = termStatus;
+          this.logger.log(`Terminal status (TermStatus)=${termStatus}`);
+        }
+        return;
+      }
+
+      if (!this.heartbeatFailing) {
+        this.heartbeatFailing = true;
+        this.logger.warn(
+          this.describeFailure(`Heartbeat (ExchangeStatuses) failed, code=${code} — reopening link`),
+        );
+      }
+      BPOSLib.commClose();
+      await this.connect();
+    } finally {
+      this.pinging = false;
+    }
   }
 
   private async connect(): Promise<void> {
@@ -176,9 +224,11 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
         const message = this.describeFailure('Purchase not approved');
         this.logger.warn(message);
         const err = new Error(message);
-        // Only our own Cancel() is a user cancellation; a connection error (LastErrorCode 1-3)
-        // or a host/terminal decline (4) must not look like "customer cancelled".
-        if (this.cancelRequested) (err as NodeJS.ErrnoException).code = 'PAYMENT_CANCELLED';
+        // Cancelled from the kiosk (our Cancel()) or by the customer on the terminal
+        // (ResponseCode 1001, same as PrivatBank) — not a connection error or a decline.
+        if (this.cancelRequested || BPOSLib.responseCode() === 1001) {
+          (err as NodeJS.ErrnoException).code = 'PAYMENT_CANCELLED';
+        }
         throw err;
       }
 
@@ -215,7 +265,9 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
       return { method: 'Purchase', params };
     } finally {
       this.saleInProgress = false;
-      BPOSLib.commClose();
+      // With the heartbeat on, keep the link open — closing it would show "ECR not connected"
+      // until the next heartbeat tick reopens it.
+      if (this.heartbeatMs === 0) BPOSLib.commClose();
     }
   }
 
@@ -251,6 +303,8 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
   // and keeps it busy (LastResult=2), which collided with Purchase.
   async checkConnection(): Promise<boolean> {
     if (this.saleInProgress || this.pinging) return this.terminalStatus === 'online';
+    // The heartbeat already keeps the status current — no need to reopen the link here.
+    if (this.heartbeatMs > 0) return this.terminalStatus === 'online';
     this.pinging = true;
     try {
       BPOSLib.commClose();
