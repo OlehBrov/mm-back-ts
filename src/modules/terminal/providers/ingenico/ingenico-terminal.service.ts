@@ -147,13 +147,13 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
         await new Promise<void>((r) => setTimeout(r, 100));
       }
 
-      // The link may have been lost while idle — re-open it before starting the sale.
-      if (this.terminalStatus !== 'online') {
-        BPOSLib.commClose();
-        await this.connect();
-        if (this.getStatus() !== 'online') {
-          throw new Error('Ingenico terminal is not reachable');
-        }
+      // The terminal drops an idle TCP link after its "connection hold time" (15 s), and
+      // the library does not notice — Purchase would fail with "Terminal connection error".
+      // Open a fresh link right before every sale, as the vendor test tool does.
+      BPOSLib.commClose();
+      await this.connect();
+      if (this.getStatus() !== 'online') {
+        throw new Error('Ingenico terminal is not reachable');
       }
 
       this.logger.log(
@@ -222,30 +222,17 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     return [{ merchantId: String(this.defaultMerchIdx) }];
   }
 
-  // Polled by the kiosk frontend every few seconds. Uses the vendor Ping() (link to the
-  // terminal only) — NOT CheckConnection(), which makes the terminal dial the bank and
-  // keeps it busy (LastResult=2), which collided with Purchase and showed "Зв'язок з банком".
+  // Polled by the kiosk frontend every few seconds. A fresh TCP open is the reachability
+  // probe: the terminal drops idle links after 15 s, so Ping() on the old link would report
+  // offline every time. Not CheckConnection() either — that makes the terminal dial the bank
+  // and keeps it busy (LastResult=2), which collided with Purchase.
   async checkConnection(): Promise<boolean> {
     if (this.saleInProgress || this.pinging) return this.terminalStatus === 'online';
     this.pinging = true;
     try {
-      // Link was lost earlier: re-open it instead of staying offline forever.
-      if (this.terminalStatus !== 'online') {
-        BPOSLib.commClose();
-        await this.connect();
-        return this.getStatus() === 'online';
-      }
-
-      const code = await BPOSLib.ping();
-      if (code === 0) return true;
-
-      this.logger.warn(`Ping failed: code=${code} "${BPOSLib.lastErrorDescription()}"`);
-      this.setStatus('offline');
-      return false;
-    } catch (err) {
-      this.logger.warn(`Ping threw: ${String(err)}`);
-      this.setStatus('offline');
-      return false;
+      BPOSLib.commClose();
+      await this.connect();
+      return this.getStatus() === 'online';
     } finally {
       this.pinging = false;
     }

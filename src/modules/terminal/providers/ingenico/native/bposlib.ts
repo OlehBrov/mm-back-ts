@@ -34,8 +34,6 @@ const ResponseCodeFn = lib.func('int BPOSLib_ResponseCode()');
 const TrnStatusFn = lib.func('uint8 BPOSLib_TrnStatus()');
 const AmountFn = lib.func('int BPOSLib_Amount()');
 const InvoiceNumFn = lib.func('int BPOSLib_InvoiceNum()');
-const CheckConnectionFn = lib.func('int BPOSLib_CheckConnection(uint8)');
-const PingFn = lib.func('int BPOSLib_Ping()');
 const LastErrorCodeFn = lib.func('uint8 BPOSLib_LastErrorCode()');
 const RRNFn = lib.func('int BPOSLib_RRN(char*)');
 const AuthCodeFn = lib.func('int BPOSLib_AuthCode(char*)');
@@ -56,12 +54,8 @@ export const BPOSLib = {
       );
     }),
   commClose: (): number => CommClose(),
-  // Ping/Purchase talk to the terminal and may block for the library's own timeout
-  // (6 s) — keep them off the event loop, otherwise the whole backend freezes.
-  ping: (): Promise<number> =>
-    new Promise((resolve, reject) => {
-      PingFn.async((err: Error | null, result: number) => (err ? reject(err) : resolve(result)));
-    }),
+  // Purchase talks to the terminal and may block for the library's own timeout (6 s) —
+  // keep it off the event loop, otherwise the whole backend freezes.
   purchase: (amount: number, addAmount: number, merchIdx: number): Promise<number> =>
     new Promise((resolve, reject) => {
       PurchaseFn.async(amount, addAmount, merchIdx, (err: Error | null, result: number) =>
@@ -76,7 +70,6 @@ export const BPOSLib = {
   trnStatus: (): number => TrnStatusFn(),
   amount: (): number => AmountFn(),
   invoiceNum: (): number => InvoiceNumFn(),
-  checkConnection: (merchIdx: number): number => CheckConnectionFn(merchIdx),
   rrn: (): string => getString(RRNFn),
   authCode: (): string => getString(AuthCodeFn),
   pan: (): string => getString(PANFn),
