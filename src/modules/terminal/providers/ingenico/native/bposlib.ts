@@ -38,6 +38,8 @@ const LastErrorCodeFn = lib.func('uint8 BPOSLib_LastErrorCode()');
 const RRNFn = lib.func('int BPOSLib_RRN(char*)');
 const AuthCodeFn = lib.func('int BPOSLib_AuthCode(char*)');
 const PANFn = lib.func('int BPOSLib_PAN(char*)');
+const TerminalIDFn = lib.func('int BPOSLib_TerminalID(char*)');
+const IssueNameFn = lib.func('int BPOSLib_IssueName(char*)');
 const LastErrorDescriptionFn = lib.func('int BPOSLib_LastErrorDescription(char*)');
 const ReqCurrReceiptFn = lib.func('int BPOSLib_ReqCurrReceipt()');
 const ReceiptFn = lib.func('int BPOSLib_Receipt(char*)');
@@ -73,6 +75,8 @@ export const BPOSLib = {
   rrn: (): string => getString(RRNFn),
   authCode: (): string => getString(AuthCodeFn),
   pan: (): string => getString(PANFn),
+  terminalId: (): string => getString(TerminalIDFn),
+  issuerName: (): string => getString(IssueNameFn),
   lastErrorDescription: (): string => getString(LastErrorDescriptionFn),
   receipt: (): string => {
     ReqCurrReceiptFn();

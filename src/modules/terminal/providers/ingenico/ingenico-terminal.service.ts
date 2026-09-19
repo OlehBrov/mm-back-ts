@@ -37,6 +37,7 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
   private isReconnecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private saleInProgress = false;
+  private cancelRequested = false;
   private pinging = false;
   private hasInitialized = false;
 
@@ -86,7 +87,10 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     try {
       const result = await BPOSLib.commOpenTCP(this.host, String(this.port));
       if (result === 0) {
-        this.logger.log(`Connected to Ingenico terminal at ${this.host}:${this.port}`);
+        // Status probes reopen the link every 30 s — log only the offline → online change.
+        if (this.terminalStatus !== 'online') {
+          this.logger.log(`Connected to Ingenico terminal at ${this.host}:${this.port}`);
+        }
         this.setStatus('online');
         this.clearReconnect();
       } else {
@@ -140,8 +144,9 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     }
 
     this.saleInProgress = true;
+    this.cancelRequested = false;
     try {
-      // A status ping may still be in flight; the terminal handles one operation at a time.
+      // A status probe may still be in flight; the terminal handles one operation at a time.
       const waitDeadline = Date.now() + this.connectionTimeoutMs * 2;
       while (this.pinging && Date.now() < waitDeadline) {
         await new Promise<void>((r) => setTimeout(r, 100));
@@ -161,53 +166,71 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
       );
       const startCode = await BPOSLib.purchase(req.amount, 0, merchIdx);
       if (startCode !== 0) {
-        const desc = BPOSLib.lastErrorDescription();
-        this.logger.error(
-          `Purchase failed to start: code=${startCode} lastErrorCode=${BPOSLib.lastErrorCode()} "${desc}"`,
-        );
-        throw new Error(`Purchase failed to start (code ${startCode}): ${desc}`);
+        throw new Error(this.describeFailure(`Purchase failed to start (code ${startCode})`));
       }
 
       const lastResult = await this.pollUntilDone(this.paymentTimeoutMs);
       this.logger.log(`Purchase finished: LastResult=${lastResult}`);
 
       if (lastResult !== 0) {
-        const desc = BPOSLib.lastErrorDescription() || `LastResult=${lastResult}`;
-        this.logger.warn(
-          `Purchase not approved: lastErrorCode=${BPOSLib.lastErrorCode()} "${desc}"`,
-        );
-        const err = new Error(`Payment declined: ${desc}`);
-        (err as NodeJS.ErrnoException).code = 'PAYMENT_CANCELLED';
+        const message = this.describeFailure('Purchase not approved');
+        this.logger.warn(message);
+        const err = new Error(message);
+        // Only our own Cancel() is a user cancellation; a connection error (LastErrorCode 1-3)
+        // or a host/terminal decline (4) must not look like "customer cancelled".
+        if (this.cancelRequested) (err as NodeJS.ErrnoException).code = 'PAYMENT_CANCELLED';
         throw err;
       }
 
+      // Per the vendor sample: read the transaction data BEFORE Confirm — Confirm starts a new
+      // library operation (LastResult=2) and the properties are undefined until it finishes.
+      const amountUAH = (BPOSLib.amount() / 100).toFixed(2);
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const params = {
+        trnStatus: '1',
+        transAmount: amountUAH,
+        amount: amountUAH,
+        // BPOSLib.h has no DateTime getter — use the kiosk clock (DD/MM/YYYY, HH:MM:SS).
+        date: `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`,
+        time: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+        approvalCode: BPOSLib.authCode(),
+        rrn: BPOSLib.rrn(),
+        pan: BPOSLib.pan(),
+        terminalId: BPOSLib.terminalId(),
+        paymentSystem: BPOSLib.issuerName(),
+        // The library does not report the acquirer; this terminal is PrivatBank's.
+        bankAcquirer: 'PrivatBank',
+        responseCode: String(BPOSLib.responseCode()),
+        invoiceNum: String(BPOSLib.invoiceNum()),
+      };
+
       // Mandatory after a successful Purchase — otherwise the terminal reverts it.
       BPOSLib.confirm();
+      const confirmResult = await this.pollUntilDone(this.connectionTimeoutMs * 2);
+      if (confirmResult !== 0) {
+        throw new Error(this.describeFailure('Payment was not confirmed (terminal will revert it)'));
+      }
 
-      const responseCode = BPOSLib.responseCode();
-      const amountUAH = (BPOSLib.amount() / 100).toFixed(2);
-
-      return {
-        method: 'Purchase',
-        params: {
-          trnStatus: '1',
-          transAmount: amountUAH,
-          amount: amountUAH,
-          approvalCode: BPOSLib.authCode(),
-          rrn: BPOSLib.rrn(),
-          pan: BPOSLib.pan(),
-          responseCode: String(responseCode),
-          invoiceNum: String(BPOSLib.invoiceNum()),
-        },
-      };
+      return { method: 'Purchase', params };
     } finally {
       this.saleInProgress = false;
+      BPOSLib.commClose();
     }
+  }
+
+  private describeFailure(prefix: string): string {
+    const errorCode = BPOSLib.lastErrorCode();
+    // 1/2 = COM/link not open, 3 = error connecting with terminal, 4 = terminal returned an
+    // error (details in ResponseCode) — per ECRCommX docs.
+    const responseCode = errorCode === 4 ? ` responseCode=${BPOSLib.responseCode()}` : '';
+    return `${prefix}: lastErrorCode=${errorCode}${responseCode} "${BPOSLib.lastErrorDescription()}"`;
   }
 
   async cancelPayment(): Promise<void> {
     // Only effective while LastResult() === 2 (transaction in progress).
     // Best-effort: swallow errors so the terminal doesn't get stuck.
+    this.cancelRequested = true;
     try {
       BPOSLib.cancel();
     } catch (err) {
@@ -232,7 +255,10 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     try {
       BPOSLib.commClose();
       await this.connect();
-      return this.getStatus() === 'online';
+      const online = this.getStatus() === 'online';
+      // Leave no half-dead link behind; the next sale opens its own.
+      BPOSLib.commClose();
+      return online;
     } finally {
       this.pinging = false;
     }
