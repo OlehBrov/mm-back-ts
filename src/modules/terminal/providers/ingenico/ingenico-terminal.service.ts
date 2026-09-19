@@ -53,6 +53,10 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
   private readonly defaultMerchIdx: number;
   // 0 disables the heartbeat (link is then opened per sale / per status probe only).
   private readonly heartbeatMs: number;
+  // ECR status sent by the heartbeat (ECRCommX ExchangeStatuses): 1 not supported, 2 normal,
+  // 3 customer in progress, 4 maintenance, 5 not connected. The terminal's idle screen may
+  // depend on it — configurable so it can be tried on the real terminal.
+  private readonly ecrStatus: number;
   private readonly paymentTimeoutMs: number;
   private readonly connectionTimeoutMs: number;
   private readonly reconnectIntervalMs: number;
@@ -67,6 +71,7 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     this.port = config.get<number>('terminal.ingenicoPort') ?? 2000;
     this.defaultMerchIdx = config.get<number>('terminal.ingenicoMerchIdx') ?? 1;
     this.heartbeatMs = config.get<number>('terminal.ingenicoHeartbeatMs') ?? 8000;
+    this.ecrStatus = config.get<number>('terminal.ingenicoEcrStatus') ?? 2;
     this.paymentTimeoutMs = config.get<number>('terminal.paymentTimeoutMs') ?? 60000;
     this.connectionTimeoutMs = config.get<number>('terminal.connectionTimeoutMs') ?? 5000;
     this.reconnectIntervalMs = config.get<number>('terminal.reconnectIntervalMs') ?? 30000;
@@ -104,7 +109,7 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
     if (this.saleInProgress || this.pinging) return;
     this.pinging = true;
     try {
-      const code = await BPOSLib.exchangeStatuses(2);
+      const code = await BPOSLib.exchangeStatuses(this.ecrStatus);
       const ok = code === 0 && (await this.pollUntilDone(this.connectionTimeoutMs)) === 0;
       if (ok) {
         if (this.heartbeatFailing) this.logger.log('Heartbeat recovered');
