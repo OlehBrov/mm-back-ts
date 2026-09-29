@@ -12,6 +12,7 @@ import { Request } from 'express';
 import { StoreAuthGuard } from '../auth/guards/store-auth.guard';
 import { CartService } from './cart.service';
 import { CartSellDto } from './dto/cart-sell.dto';
+import { CartPriceDto } from './dto/cart-price.dto';
 
 interface StoreRequest extends Request {
   user: { auth_id: string };
@@ -26,6 +27,16 @@ export class CartController {
   @HttpCode(HttpStatus.OK)
   sell(@Req() req: StoreRequest, @Body() dto: CartSellDto) {
     return this.cartService.sellProducts(dto, req.user.auth_id);
+  }
+
+  /** Live quote — recomputes authoritative prices/discounts for the current cart
+   * contents (no side effects, no auth-based store lookup needed). Called whenever
+   * the kiosk cart changes, so quantity-dependent promos (дубль, поріг чека) show
+   * the correct number before payment, not just at final sell. */
+  @Post('price')
+  @HttpCode(HttpStatus.OK)
+  price(@Body() dto: CartPriceDto) {
+    return this.cartService.priceCart(dto);
   }
 
   @Delete('cancel')

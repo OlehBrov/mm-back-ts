@@ -163,6 +163,7 @@ model Sales {
   sale_description String?        @db.NVarChar(256)
   sale_custom_id   Int?           @unique(map: "Sales_UNIQUE")
   is_active        Boolean        @default(true)
+  threshold_amount Decimal?       @db.Decimal(10, 2)
   LoadProducts     LoadProducts[]
   Products         Products[]
 }
@@ -371,6 +372,22 @@ model CategoryTaskQueue {
   new_cat_1C_id        Int?
   created_at           DateTime  @default(now(), map: "DF__CatTaskQ__create") @db.DateTime
   processed_at         DateTime? @db.DateTime
+}
+
+model SaleTaskQueue {
+  id               Int       @id(map: "SaleTaskQueue_PK") @default(autoincrement())
+  action           String    @db.VarChar(20)
+  status           String    @default("pending", map: "DF__SaleTaskQ__status") @db.VarChar(20)
+  sale_custom_id   Int
+  sale_name        String?   @db.NVarChar(128)
+  sale_discount_1  Decimal?  @db.Decimal(2, 2)
+  sale_discount_2  Decimal?  @db.Decimal(2, 2)
+  sale_discount_3  Decimal?  @db.Decimal(2, 2)
+  sale_description String?   @db.NVarChar(256)
+  threshold_amount Decimal?  @db.Decimal(10, 2)
+  is_active        Boolean?
+  created_at       DateTime  @default(now(), map: "DF__SaleTaskQ__create") @db.DateTime
+  processed_at     DateTime? @db.DateTime
 }
 
 model OverdueFiscalQueue {

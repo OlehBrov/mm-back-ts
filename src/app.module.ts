@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './database/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TerminalModule } from './modules/terminal/terminal.module';
+import { PricingModule } from './modules/pricing/pricing.module';
 import { FiscalModule } from './modules/fiscal/fiscal.module';
 import { CartModule } from './modules/cart/cart.module';
 import { KioskModule } from './modules/kiosk/kiosk.module';
@@ -30,6 +31,7 @@ import configuration from './config/configuration';
     MailerModule,
     AuthModule,
     TerminalModule,
+    PricingModule,
     FiscalModule,
     CartModule,
     KioskModule,

@@ -37,6 +37,7 @@ export class IdleSyncService {
       await this.syncSubcategoryMoves();
       await this.syncCategoryTasks();
       await this.syncStoreSales();
+      await this.syncSaleTasks();
     } finally {
       this.isSyncing = false;
     }
@@ -155,6 +156,25 @@ export class IdleSyncService {
     subcat_name?: string;
   }): Promise<void> {
     await this.prisma.subcategoryMoveQueue.create({ data });
+  }
+
+  /**
+   * Enqueues a Sales-dictionary add/edit/delete/toggle for deferred processing —
+   * same reasoning as products/categories: a promotion's parameters must not change
+   * under a customer mid-purchase, so the write is deferred until the kiosk is idle.
+   */
+  async enqueueSaleTask(data: {
+    action: 'add' | 'edit' | 'delete' | 'set_active';
+    sale_custom_id: number;
+    sale_name?: string;
+    sale_discount_1?: number | null;
+    sale_discount_2?: number | null;
+    sale_discount_3?: number | null;
+    sale_description?: string | null;
+    threshold_amount?: number | null;
+    is_active?: boolean;
+  }): Promise<void> {
+    await this.prisma.saleTaskQueue.create({ data });
   }
 
   async syncDebug(): Promise<{ barcode: string; error: string }[]> {
@@ -663,6 +683,98 @@ export class IdleSyncService {
 
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     await this.prisma.categoryTaskQueue.deleteMany({
+      where: { status: 'done', processed_at: { lt: cutoff } },
+    });
+  }
+
+  private async syncSaleTasks(): Promise<void> {
+    const items = await this.prisma.saleTaskQueue.findMany({
+      where: { status: 'pending' },
+      orderBy: { created_at: 'asc' },
+    });
+
+    if (!items.length) return;
+
+    let processed = 0;
+    const now = new Date();
+
+    for (const item of items) {
+      try {
+        switch (item.action) {
+          case 'add': {
+            const exists = await this.prisma.sales.findUnique({ where: { sale_custom_id: item.sale_custom_id } });
+            if (!exists) {
+              await this.prisma.sales.create({
+                data: {
+                  sale_name: item.sale_name ?? 'Нова акція',
+                  sale_discount_1: item.sale_discount_1 ?? null,
+                  sale_discount_2: item.sale_discount_2 ?? null,
+                  sale_discount_3: item.sale_discount_3 ?? null,
+                  sale_description: item.sale_description ?? 'No description provided',
+                  threshold_amount: item.threshold_amount ?? null,
+                  sale_custom_id: item.sale_custom_id,
+                },
+              });
+            }
+            break;
+          }
+
+          case 'edit': {
+            const current = await this.prisma.sales.findUnique({ where: { sale_custom_id: item.sale_custom_id } });
+            if (!current) throw new Error(`Sale ${item.sale_custom_id} not found`);
+
+            const updateData: Record<string, unknown> = {};
+            if (item.sale_name != null) updateData.sale_name = item.sale_name;
+            if (item.sale_discount_1 != null) updateData.sale_discount_1 = item.sale_discount_1;
+            if (item.sale_discount_2 != null) updateData.sale_discount_2 = item.sale_discount_2;
+            if (item.sale_discount_3 != null) updateData.sale_discount_3 = item.sale_discount_3;
+            if (item.sale_description != null) updateData.sale_description = item.sale_description;
+            if (item.threshold_amount != null) updateData.threshold_amount = item.threshold_amount;
+            if (item.is_active != null) updateData.is_active = item.is_active;
+            if (Object.keys(updateData).length > 0) {
+              await this.prisma.sales.update({ where: { sale_custom_id: item.sale_custom_id }, data: updateData });
+            }
+            break;
+          }
+
+          case 'set_active': {
+            const current = await this.prisma.sales.findUnique({ where: { sale_custom_id: item.sale_custom_id } });
+            if (!current) throw new Error(`Sale ${item.sale_custom_id} not found`);
+            if (item.is_active == null) throw new Error('is_active is required for set_active');
+            await this.prisma.sales.update({ where: { sale_custom_id: item.sale_custom_id }, data: { is_active: item.is_active } });
+            break;
+          }
+
+          case 'delete': {
+            const current = await this.prisma.sales.findUnique({ where: { sale_custom_id: item.sale_custom_id } });
+            if (current) await this.prisma.sales.delete({ where: { sale_custom_id: item.sale_custom_id } });
+            break;
+          }
+
+          default:
+            throw new Error(`Unknown sale task action: ${item.action}`);
+        }
+
+        await this.prisma.saleTaskQueue.update({
+          where: { id: item.id },
+          data: { status: 'done', processed_at: now },
+        });
+        processed++;
+      } catch (err) {
+        this.logger.error(
+          `Failed to apply SaleTaskQueue #${item.id} (action=${item.action}, sale_custom_id=${item.sale_custom_id}): ` +
+            (err instanceof Error ? err.message : String(err)),
+        );
+      }
+    }
+
+    if (processed) {
+      this.logger.log(`Applied ${processed}/${items.length} sale task(s)`);
+      this.events.emit(PRODUCT_UPDATED_EVENT);
+    }
+
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    await this.prisma.saleTaskQueue.deleteMany({
       where: { status: 'done', processed_at: { lt: cutoff } },
     });
   }

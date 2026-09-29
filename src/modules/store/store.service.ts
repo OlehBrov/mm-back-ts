@@ -14,6 +14,28 @@ import { SaveImageDto } from './dto/save-image.dto';
 import { PRODUCT_UPDATED_EVENT, IMAGE_EXTENSIONS } from './constants';
 import { updateProductLoadLots } from './utils/product-load-lots.util';
 import { IdleSyncService } from '../kiosk/idle-sync.service';
+import { PricingService } from '../pricing/pricing.service';
+import { PriceableProduct } from '../pricing/pricing.types';
+
+// Fields attached to every product returned by the listing/search/single endpoints.
+// badgeType lets the frontend pick a marker style without overloading the real
+// sale_id: real Sales.sale_custom_id values (0-10) mean what they always meant;
+// 11/12 are synthetic, frontend-only keys for the category/subcategory fallback
+// discount, which has no sale_id of its own (the product's sale_id stays 0).
+interface PricingFields {
+  priceAfterDiscount: number;
+  priceDecrement: number;
+  hasLowerPrice: boolean;
+  discountValue: number;
+  saleName: string | null;
+  badgeType: number;
+}
+
+function badgeTypeFor(source: string, saleId: number): number {
+  if (source === 'category') return 11;
+  if (source === 'subcategory') return 12;
+  return saleId;
+}
 
 @Injectable()
 export class StoreService {
@@ -26,6 +48,7 @@ export class StoreService {
     private readonly config: ConfigService,
     private readonly events: EventEmitter2,
     private readonly idleSync: IdleSyncService,
+    private readonly pricing: PricingService,
   ) {
     this.imagesDir = this.config.get<string>('images.dir') ?? 'C:/mm-images';
     this.mmHost = this.config.get<string>('store.host') ?? 'http://localhost:6006';
@@ -33,6 +56,19 @@ export class StoreService {
     if (!fs.existsSync(this.imagesDir)) {
       fs.mkdirSync(this.imagesDir, { recursive: true });
     }
+  }
+
+  /** Mutates a fetched product in place, adding the authoritative price/discount fields. */
+  private attachPricing<T extends PriceableProduct>(product: T): T & PricingFields {
+    const priced = this.pricing.priceProduct(product);
+    return Object.assign(product, {
+      priceAfterDiscount: priced.priceAfterDiscount,
+      priceDecrement: priced.priceDecrement,
+      hasLowerPrice: priced.hasLowerPrice,
+      discountValue: priced.discountFraction,
+      saleName: priced.saleName,
+      badgeType: badgeTypeFor(priced.source, priced.saleId),
+    });
   }
 
   // ─── GET /api/products ─────────────────────────────────────────────────────
@@ -77,17 +113,21 @@ export class StoreService {
         Subcategories: true,
         Sales: true,
         LoadProducts_LoadProducts_product_idToProducts: { select: { load_date: true } },
+        LoadProducts_Products_product_lotToLoadProducts: { select: { id: true, load_date: true } },
         Subcategories_Products_cat_subcat_idToSubcategories: {
           include: { Categories_Subcategories_category_ref_1CToCategories: true },
         },
         ComboProducts_Products_combo_idToComboProducts: {
           include: {
-            Products_ComboProducts_child_product_idToProducts: { select: { product_left: true } },
+            Products_ComboProducts_child_product_idToProducts: {
+              select: { id: true, product_left: true, product_price: true },
+            },
           },
         },
         ProductsDivisions: true,
       },
     });
+    for (const product of filteredProducts) this.attachPricing(product);
 
     if (!filteredProducts.length) {
       return { message: 'No products found for the provided filters.', status: 'none' };
@@ -158,21 +198,52 @@ export class StoreService {
           ...(Object.keys(vatExcludeFilter).length ? [vatExcludeFilter] : []),
         ],
       } as never,
+      include: {
+        Sales: true,
+        Categories: true,
+        Subcategories: true,
+        LoadProducts_Products_product_lotToLoadProducts: { select: { id: true, load_date: true } },
+        ComboProducts_Products_combo_idToComboProducts: {
+          include: {
+            Products_ComboProducts_child_product_idToProducts: {
+              select: { id: true, product_left: true, product_price: true },
+            },
+          },
+        },
+      },
     });
+    for (const product of searchResults) this.attachPricing(product);
     return { searchResults };
   }
 
   // ─── GET /api/products/product ─────────────────────────────────────────────
 
   async getProductById(comboId: number) {
-    const comboProduct = await this.prisma.comboProducts.findUnique({
+    const parent = await this.prisma.products.findFirst({
       where: { combo_id: comboId },
-      include: { Products_ComboProducts_child_product_idToProducts: true },
+      include: {
+        Sales: true,
+        ComboProducts_Products_combo_idToComboProducts: {
+          include: {
+            Products_ComboProducts_child_product_idToProducts: {
+              select: { id: true, product_left: true, product_price: true },
+            },
+          },
+        },
+      },
     });
-    if (!comboProduct) {
+    const child = parent?.ComboProducts_Products_combo_idToComboProducts
+      ?.Products_ComboProducts_child_product_idToProducts;
+    if (!parent || !child) {
       return { message: 'No child product found' };
     }
-    return { childProduct: comboProduct.Products_ComboProducts_child_product_idToProducts };
+
+    const combo = this.pricing.priceCombo(parent as unknown as PriceableProduct);
+    return {
+      childProduct: child,
+      // Authoritative pair pricing — frontend no longer computes this itself.
+      comboPricing: combo ? { parent: combo.parent, child: combo.child } : null,
+    };
   }
 
   // ─── GET /api/products/single ──────────────────────────────────────────────
@@ -220,8 +291,20 @@ export class StoreService {
       where: where as never,
       include: {
         AdditionalBarcodes_Products_additional_barcodesToAdditionalBarcodes: true,
+        Sales: true,
+        Categories: true,
+        Subcategories: true,
+        LoadProducts_Products_product_lotToLoadProducts: { select: { id: true, load_date: true } },
+        ComboProducts_Products_combo_idToComboProducts: {
+          include: {
+            Products_ComboProducts_child_product_idToProducts: {
+              select: { id: true, product_left: true, product_price: true },
+            },
+          },
+        },
       },
     });
+    if (product) this.attachPricing(product);
 
     this.logger.debug(
       `[SCAN] Prisma result: ${
@@ -297,8 +380,17 @@ export class StoreService {
 
     const validProducts: (AddProductDto & { catSubcatId: { id: number } })[] = [];
     const invalidProducts: AddProductDto[] = [];
+    const invalidSaleId: { product: AddProductDto; reason: string }[] = [];
+
+    const validSaleIds = await this.getValidSaleIds();
 
     for (const p of normalizedProducts) {
+      const saleId = Number(p.sale_id);
+      if (!validSaleIds.has(saleId)) {
+        invalidSaleId.push({ product: p, reason: `sale_id ${saleId} не знайдено в таблиці Sales` });
+        continue;
+      }
+
       const catId = Number(p.product_category);
       const subcatId = Number(p.product_subcategory);
       const catSubcatId = await this.prisma.subcategories.findFirst({
@@ -404,6 +496,7 @@ export class StoreService {
       missingFields: missingFieldsProducts,
       invalidCategory: invalidProducts,
       notAdded: `Not added ${invalidProducts.length} products due to invalid category or subcategory`,
+      invalidSaleId,
       failedToConvert: abNormalProducts,
       constraintViolations: dbConflicts,
     };
@@ -599,6 +692,7 @@ export class StoreService {
       select: { barcode: true, cat_subcat_id: true },
     });
     const existingProductsMap = new Map(existingProductsList.map((p) => [p.barcode, p]));
+    const validSaleIds = await this.getValidSaleIds();
 
     const approved: unknown[] = [];
     const rejected: unknown[] = [];
@@ -612,6 +706,14 @@ export class StoreService {
       }
 
       const parsed = this.parseProductData(rest);
+
+      if (parsed.sale_id !== undefined) {
+        const saleId = Number(parsed.sale_id);
+        if (!validSaleIds.has(saleId)) {
+          rejected.push({ barcode, reason: `sale_id ${saleId} не знайдено в таблиці Sales` });
+          continue;
+        }
+      }
 
       let catSubcatId: number | undefined;
 
@@ -728,6 +830,14 @@ export class StoreService {
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  // sale_id on an incoming product must reference a real row in the Sales dictionary
+  // (managed via /api/sales) — otherwise the product would silently carry a promotion
+  // id that PricingService can never resolve.
+  private async getValidSaleIds(): Promise<Set<number>> {
+    const sales = await this.prisma.sales.findMany({ select: { sale_custom_id: true } });
+    return new Set(sales.map((s) => s.sale_custom_id).filter((id): id is number => id !== null));
+  }
 
   private async resolveImageUrl(barcode: string): Promise<string> {
     for (const ext of IMAGE_EXTENSIONS) {

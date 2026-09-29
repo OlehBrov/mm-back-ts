@@ -1,10 +1,14 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { IdleSyncService } from '../kiosk/idle-sync.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly idleSync: IdleSyncService,
+  ) {}
 
   // ─── Stores ───────────────────────────────────────────────────────────────
 
@@ -139,49 +143,75 @@ export class AdminService {
     return { message: 'success', data: enriched };
   }
 
+  // Sales CRUD below only queues the change (SaleTaskQueue) — same reasoning as
+  // product/category edits: IdleSyncService applies it, and notifies the frontend,
+  // only once the kiosk is idle, so a promotion's parameters never shift under a
+  // customer mid-purchase.
+
   async setSaleActive(sale_custom_id: number, is_active: boolean) {
     const sale = await this.prisma.sales.findUnique({ where: { sale_custom_id } });
     if (!sale) throw new NotFoundException(`No such sale with id ${sale_custom_id}`);
 
-    const updated = await this.prisma.sales.update({ where: { sale_custom_id }, data: { is_active } });
-    return { message: `Sale ${sale_custom_id} ${is_active ? 'activated' : 'deactivated'}`, data: updated };
+    await this.idleSync.enqueueSaleTask({ action: 'set_active', sale_custom_id, is_active });
+    await this.idleSync.syncIfCurrentlyIdle();
+    return { message: `Sale ${sale_custom_id} queued to be ${is_active ? 'activated' : 'deactivated'}` };
   }
 
-  async addSale(saleData: { sale_name: string; sale_custom_id: number; sale_discount_1?: number; sale_discount_2?: number; sale_discount_3?: number; sale_description?: string }) {
+  async addSale(saleData: { sale_name: string; sale_custom_id: number; sale_discount_1?: number; sale_discount_2?: number; sale_discount_3?: number; sale_description?: string; threshold_amount?: number }) {
     const existing = await this.prisma.sales.findUnique({ where: { sale_custom_id: saleData.sale_custom_id } });
     if (existing) throw new ConflictException(`Sale with id ${saleData.sale_custom_id} already exists`);
 
-    const sale = await this.prisma.sales.create({
-      data: {
-        sale_name: saleData.sale_name,
-        sale_discount_1: saleData.sale_discount_1 as never ?? null,
-        sale_discount_2: saleData.sale_discount_2 as never ?? null,
-        sale_discount_3: saleData.sale_discount_3 as never ?? null,
-        sale_description: saleData.sale_description ?? 'No description provided',
-        sale_custom_id: saleData.sale_custom_id,
-      },
+    await this.idleSync.enqueueSaleTask({
+      action: 'add',
+      sale_custom_id: saleData.sale_custom_id,
+      sale_name: saleData.sale_name,
+      sale_discount_1: saleData.sale_discount_1 ?? null,
+      sale_discount_2: saleData.sale_discount_2 ?? null,
+      sale_discount_3: saleData.sale_discount_3 ?? null,
+      sale_description: saleData.sale_description ?? null,
+      threshold_amount: saleData.threshold_amount ?? null,
     });
-    return { message: 'Sale added', sale };
+    await this.idleSync.syncIfCurrentlyIdle();
+    return { message: `Sale ${saleData.sale_custom_id} queued for deferred idle sync` };
   }
 
   async editSale(updateData: { sale_custom_id: number; [key: string]: unknown }) {
-    if (!updateData.sale_custom_id) throw new BadRequestException("Field 'sale_custom_id' must be provided");
-    const { sale_custom_id, ...newData } = updateData;
+    if (updateData.sale_custom_id === undefined || updateData.sale_custom_id === null) {
+      throw new BadRequestException("Field 'sale_custom_id' must be provided");
+    }
+    const sale_custom_id = Number(updateData.sale_custom_id);
     const sale = await this.prisma.sales.findUnique({ where: { sale_custom_id } });
     if (!sale) throw new NotFoundException(`No such sale with id ${sale_custom_id}`);
 
-    const { id, ...oldData } = sale;
-    const mergedData = { ...oldData, ...newData };
-    const updated = await this.prisma.sales.update({ where: { sale_custom_id }, data: mergedData as never });
-    return { message: `Sale ${sale_custom_id} updated`, data: updated };
+    const toOptNum = (v: unknown): number | null | undefined => (v === undefined ? undefined : v === null ? null : Number(v));
+    const toOptStr = (v: unknown): string | null | undefined => (v === undefined ? undefined : v === null ? null : String(v));
+    const toOptBool = (v: unknown): boolean | undefined => (v === undefined || v === null ? undefined : Boolean(v));
+
+    await this.idleSync.enqueueSaleTask({
+      action: 'edit',
+      sale_custom_id,
+      sale_name: toOptStr(updateData.sale_name) ?? undefined,
+      sale_discount_1: toOptNum(updateData.sale_discount_1),
+      sale_discount_2: toOptNum(updateData.sale_discount_2),
+      sale_discount_3: toOptNum(updateData.sale_discount_3),
+      sale_description: toOptStr(updateData.sale_description),
+      threshold_amount: toOptNum(updateData.threshold_amount),
+      is_active: toOptBool(updateData.is_active),
+    });
+    await this.idleSync.syncIfCurrentlyIdle();
+    return { message: `Sale ${sale_custom_id} queued for deferred idle sync` };
   }
 
   async removeSale(sale_custom_id: number) {
-    if (!sale_custom_id) throw new BadRequestException("Field 'sale_custom_id' must be provided");
+    if (sale_custom_id === undefined || sale_custom_id === null || Number.isNaN(sale_custom_id)) {
+      throw new BadRequestException("Field 'sale_custom_id' must be provided");
+    }
     const sale = await this.prisma.sales.findUnique({ where: { sale_custom_id } });
     if (!sale) throw new NotFoundException(`No such sale with id ${sale_custom_id}`);
-    const deleted = await this.prisma.sales.delete({ where: { sale_custom_id } });
-    return { message: `Sale ${sale_custom_id} deleted`, data: deleted };
+
+    await this.idleSync.enqueueSaleTask({ action: 'delete', sale_custom_id });
+    await this.idleSync.syncIfCurrentlyIdle();
+    return { message: `Sale ${sale_custom_id} queued for deferred deletion` };
   }
 
   // ─── Finance ──────────────────────────────────────────────────────────────

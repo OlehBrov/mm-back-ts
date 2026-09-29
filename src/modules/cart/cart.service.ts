@@ -12,6 +12,8 @@ import { FiscalService } from '../fiscal/fiscal.service';
 import { ReceiptBuilderService, CartProduct } from '../fiscal/receipt-builder.service';
 import { PaymentResponse } from '../terminal/interfaces/terminal-provider.interface';
 import { CartSellDto, CartProductDto } from './dto/cart-sell.dto';
+import { CartPriceDto } from './dto/cart-price.dto';
+import { PricingService } from '../pricing/pricing.service';
 
 /** Emitted before the second terminal payment starts (noVAT succeeded, VAT about to begin).
  *  WebSocket gateway listens to this and relays it to the kiosk display. */
@@ -47,9 +49,15 @@ export class CartService {
     private readonly fiscalService: FiscalService,
     private readonly receiptBuilder: ReceiptBuilderService,
     private readonly events: EventEmitter2,
+    private readonly pricing: PricingService,
   ) {}
 
   // ─── Public API ───────────────────────────────────────────────────────────
+
+  /** Live quote for the kiosk cart screen — see PricingService for the actual rules. */
+  priceCart(dto: CartPriceDto) {
+    return this.pricing.priceCart(dto.lines);
+  }
 
   /**
    * Full purchase flow:
@@ -83,6 +91,11 @@ export class CartService {
 
     if (!store) throw new ForbiddenException('Store not found');
 
+    // Authoritative repricing: whatever price/discount/sale_id/lot the kiosk sent is
+    // discarded and replaced with a fresh server-side calculation (PricingService).
+    // The kiosk is not a trusted party for money — only its barcodes/quantities matter.
+    const cartProducts = await this.repriceAuthoritative(dto.cartProducts);
+
     // taxgrp is configured per-merchant on the /setup screen (FiscalConfig.taxgrp),
     // not on Store — look it up for whichever merchants are actually assigned.
     const merchantIds = [store.default_merchant, store.VAT_excise_merchant].filter(
@@ -97,7 +110,7 @@ export class CartService {
     // One UUID shared across all products in this session (both merchants)
     const internalCheckId = randomUUID();
     const { noVatProducts, vatProducts } = this.splitByTaxGroup(
-      dto.cartProducts,
+      cartProducts,
       store,
       taxGroupByMerchant,
       internalCheckId,
@@ -220,6 +233,37 @@ export class CartService {
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────
+
+  /**
+   * Re-fetches every cart line from the DB via PricingService and overwrites the
+   * money- and inventory-relevant fields (price, discount, sale_id, id, product_lot)
+   * with the server's own numbers. Only display-only fields (name, mark, product_code)
+   * and routing fields the kiosk already decided (merchant, is_VAT_Excise, quantity)
+   * are taken from the client as-is.
+   */
+  private async repriceAuthoritative(products: CartProductDto[]): Promise<CartProductDto[]> {
+    const priced = await this.pricing.priceCart(
+      products.map((p) => ({ barcode: p.barcode, quantity: p.inCartQuantity })),
+    );
+    const byBarcode = new Map(priced.map((l) => [l.barcode, l]));
+
+    return products.map((p) => {
+      const line = byBarcode.get(p.barcode);
+      if (!line) {
+        // priceCart() already throws NotFoundException for missing barcodes —
+        // this branch only guards against a future refactor silently dropping lines.
+        throw new BadRequestException(`Pricing failed for barcode ${p.barcode}`);
+      }
+      return {
+        ...p,
+        id: line.productId,
+        product_price: line.basePrice,
+        priceDecrement: line.priceDecrement,
+        sale_id: line.saleId,
+        product_lot: line.productLot ?? undefined,
+      };
+    });
+  }
 
   /**
    * Splits products into noVAT and VAT groups, assigns taxGroup per product.

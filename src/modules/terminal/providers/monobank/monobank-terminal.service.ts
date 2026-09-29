@@ -41,6 +41,12 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
   private isReconnecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private saleInProgress = false;
+  // Guards against concurrent PingDevice calls (e.g. two near-simultaneous 'check-status'
+  // socket events): request() matches replies by method name only, with no correlation id,
+  // so two in-flight PingDevice requests can steal each other's response and one times out —
+  // wrongly flipping status to 'offline' right after a successful check. A caller that arrives
+  // while a ping is already in flight just awaits that same ping instead of sending another.
+  private pingInFlight: Promise<void> | null = null;
 
   // Set to true by terminal.module factory before onModuleInit fires
   shouldConnect = false;
@@ -287,6 +293,15 @@ export class MonoBankTerminalService implements ITerminalProvider, OnModuleInit,
   }
 
   async ping(timeoutMs = this.connectionTimeoutMs): Promise<void> {
+    if (this.pingInFlight) return this.pingInFlight;
+
+    this.pingInFlight = this.doPing(timeoutMs).finally(() => {
+      this.pingInFlight = null;
+    });
+    return this.pingInFlight;
+  }
+
+  private async doPing(timeoutMs: number): Promise<void> {
     try {
       await this.request(
         { method: 'PingDevice' },

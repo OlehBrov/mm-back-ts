@@ -15,7 +15,7 @@ export default () => ({
     monobankPort: parseInt(process.env.MONOBANK_PORT ?? '3000', 10),
     paymentTimeoutMs: parseInt(process.env.TERMINAL_PAYMENT_TIMEOUT_MS ?? '60000', 10),
     connectionTimeoutMs: parseInt(process.env.TERMINAL_CONNECTION_TIMEOUT_MS ?? '5000', 10),
-    reconnectIntervalMs: parseInt(process.env.TERMINAL_RECONNECT_INTERVAL_MS ?? '30000', 10),
+    reconnectIntervalMs: parseInt(process.env.TERMINAL_RECONNECT_INTERVAL_MS ?? '15000', 10),
   },
   fiscal: {
     host: process.env.FISCAL_HOST ?? 'https://kasa.vchasno.ua',
