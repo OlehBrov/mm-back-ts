@@ -1,10 +1,12 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
 import { FiscalService, VchasnoTokenStatus } from '../fiscal/fiscal.service';
 import { TerminalService } from '../terminal/terminal.service';
 import { MerchantInfo } from '../terminal/interfaces/terminal-provider.interface';
+import { PRODUCT_UPDATED_EVENT } from '../store/constants';
 import { UpdateStoreInfoDto } from './dto/store-info.dto';
 import { UpsertTerminalConfigDto } from './dto/terminal-config.dto';
 import { UpsertFiscalConfigDto } from './dto/fiscal-config.dto';
@@ -19,6 +21,7 @@ export class SetupService {
     private readonly config: ConfigService,
     private readonly fiscal: FiscalService,
     private readonly terminal: TerminalService,
+    private readonly events: EventEmitter2,
   ) {
     this.storeAuthId = config.get<string>('store.authId') ?? '';
   }
@@ -460,5 +463,74 @@ export class SetupService {
       }
     }
     throw new UnauthorizedException('Invalid password');
+  }
+
+  // ─── Sales (акції) ────────────────────────────────────────────────────────
+  // Applies immediately — unlike /api/sales/* (AdminService), which queues changes
+  // for idle because 1C can call it at any time. These endpoints are only reachable
+  // from the password-gated /setup/sales screen, which replaces the shopping UI on
+  // the same kiosk display, so a customer cannot be mid-purchase while it's open.
+
+  async setSaleActive(sale_custom_id: number, is_active: boolean) {
+    const sale = await this.prisma.sales.findUnique({ where: { sale_custom_id } });
+    if (!sale) throw new NotFoundException(`No such sale with id ${sale_custom_id}`);
+
+    const updated = await this.prisma.sales.update({ where: { sale_custom_id }, data: { is_active } });
+    this.events.emit(PRODUCT_UPDATED_EVENT);
+    return { message: `Sale ${sale_custom_id} ${is_active ? 'activated' : 'deactivated'}`, data: updated };
+  }
+
+  async addSale(saleData: {
+    sale_name: string;
+    sale_custom_id: number;
+    sale_discount_1?: number;
+    sale_discount_2?: number;
+    sale_discount_3?: number;
+    sale_description?: string;
+    threshold_amount?: number;
+  }) {
+    const existing = await this.prisma.sales.findUnique({ where: { sale_custom_id: saleData.sale_custom_id } });
+    if (existing) throw new ConflictException(`Sale with id ${saleData.sale_custom_id} already exists`);
+
+    const sale = await this.prisma.sales.create({
+      data: {
+        sale_name: saleData.sale_name,
+        sale_discount_1: (saleData.sale_discount_1 as never) ?? null,
+        sale_discount_2: (saleData.sale_discount_2 as never) ?? null,
+        sale_discount_3: (saleData.sale_discount_3 as never) ?? null,
+        sale_description: saleData.sale_description ?? 'No description provided',
+        threshold_amount: (saleData.threshold_amount as never) ?? null,
+        sale_custom_id: saleData.sale_custom_id,
+      },
+    });
+    this.events.emit(PRODUCT_UPDATED_EVENT);
+    return { message: 'Sale added', sale };
+  }
+
+  async editSale(updateData: { sale_custom_id: number; [key: string]: unknown }) {
+    if (updateData.sale_custom_id === undefined || updateData.sale_custom_id === null) {
+      throw new BadRequestException("Field 'sale_custom_id' must be provided");
+    }
+    const sale_custom_id = Number(updateData.sale_custom_id);
+    const { sale_custom_id: _ignored, ...newData } = updateData;
+    const sale = await this.prisma.sales.findUnique({ where: { sale_custom_id } });
+    if (!sale) throw new NotFoundException(`No such sale with id ${sale_custom_id}`);
+
+    const { id, ...oldData } = sale;
+    const mergedData = { ...oldData, ...newData };
+    const updated = await this.prisma.sales.update({ where: { sale_custom_id }, data: mergedData as never });
+    this.events.emit(PRODUCT_UPDATED_EVENT);
+    return { message: `Sale ${sale_custom_id} updated`, data: updated };
+  }
+
+  async removeSale(sale_custom_id: number) {
+    if (sale_custom_id === undefined || sale_custom_id === null || Number.isNaN(sale_custom_id)) {
+      throw new BadRequestException("Field 'sale_custom_id' must be provided");
+    }
+    const sale = await this.prisma.sales.findUnique({ where: { sale_custom_id } });
+    if (!sale) throw new NotFoundException(`No such sale with id ${sale_custom_id}`);
+    const deleted = await this.prisma.sales.delete({ where: { sale_custom_id } });
+    this.events.emit(PRODUCT_UPDATED_EVENT);
+    return { message: `Sale ${sale_custom_id} deleted`, data: deleted };
   }
 }

@@ -99,4 +99,28 @@ export class SetupController {
   deleteFiscalConfig(@Param('merchantId') merchantId: string) {
     return this.setupService.deleteFiscalConfig(merchantId);
   }
+
+  // ─── Sales (акції) — applies immediately, see SetupService for why ─────────
+
+  @Post('sales/add')
+  addSale(@Body() body: { sale_name: string; sale_custom_id: number; sale_discount_1?: number; sale_discount_2?: number; sale_discount_3?: number; sale_description?: string; threshold_amount?: number }) {
+    return this.setupService.addSale(body);
+  }
+
+  @Post('sales/edit')
+  @HttpCode(200)
+  editSale(@Body() body: { sale_custom_id: number; [key: string]: unknown }) {
+    return this.setupService.editSale(body);
+  }
+
+  @Delete('sales/delete')
+  removeSale(@Body() body: { sale_custom_id: number }) {
+    return this.setupService.removeSale(body.sale_custom_id);
+  }
+
+  @Patch('sales/:saleCustomId/status')
+  @HttpCode(200)
+  setSaleActive(@Param('saleCustomId') saleCustomId: string, @Body() body: { is_active: boolean }) {
+    return this.setupService.setSaleActive(Number(saleCustomId), Boolean(body.is_active));
+  }
 }
