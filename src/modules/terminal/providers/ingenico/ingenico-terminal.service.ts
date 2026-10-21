@@ -145,7 +145,7 @@ export class IngenicoTerminalService implements ITerminalProvider, OnModuleInit,
         this.setStatus('online');
         this.clearReconnect();
       } else {
-        this.logger.warn(`CommOpenTCP failed (code ${result})`);
+        this.logger.warn(this.describeFailure(`CommOpenTCP failed (code ${result})`));
         this.setStatus('offline');
         this.scheduleReconnect();
       }
