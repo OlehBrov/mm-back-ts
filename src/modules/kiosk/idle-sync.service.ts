@@ -278,49 +278,43 @@ export class IdleSyncService {
           }),
         };
 
-        let upserted: { id: number };
-
-        if (item.action === 'update') {
-          upserted = await this.prisma.products.update({
-            where: { barcode: item.barcode },
-            data: sharedUpdateFields,
-          });
-        } else {
-          upserted = await this.prisma.products.upsert({
-            where: { barcode: item.barcode },
-            update: sharedUpdateFields,
-            create: {
-              barcode: item.barcode,
-              product_name: item.product_name,
-              product_code: item.product_code,
-              measure: item.measure ?? 'шт',
-              product_name_ru: item.product_name_ru,
-              product_name_ua: item.product_name_ua,
-              product_description: item.product_description,
-              product_image: item.product_image,
-              product_price: item.product_price,
-              product_discount: item.product_discount,
-              exposition_term: item.exposition_term,
-              discount_price_1: item.discount_price_1,
-              discount_price_2: item.discount_price_2,
-              discount_price_3: item.discount_price_3,
-              is_VAT_Excise: item.is_VAT_Excise,
-              excise_product: item.excise_product ?? false,
-              product_left: incomingQty,
-              is_new_product: item.is_new_product ?? false,
-              updatedAt: now,
-              Subcategories_Products_cat_subcat_idToSubcategories: {
-                connect: { id: item.cat_subcat_id },
-              },
-              Categories: { connect: { cat_1C_id: item.product_category! } },
-              Subcategories: { connect: { subcat_1C_id: item.product_subcategory! } },
-              Sales: { connect: { sale_custom_id: saleId } },
-              ...(item.product_division != null && {
-                ProductsDivisions: { connect: { division_custom_id: item.product_division } },
-              }),
+        // 'update' can legitimately target a barcode that doesn't exist yet — store.service's
+        // updateProducts() allows creating a new product via the /update endpoint as long as
+        // category+subcategory are provided — so both actions upsert the same way.
+        const upserted: { id: number } = await this.prisma.products.upsert({
+          where: { barcode: item.barcode },
+          update: sharedUpdateFields,
+          create: {
+            barcode: item.barcode,
+            product_name: item.product_name,
+            product_code: item.product_code,
+            measure: item.measure ?? 'шт',
+            product_name_ru: item.product_name_ru,
+            product_name_ua: item.product_name_ua,
+            product_description: item.product_description,
+            product_image: item.product_image,
+            product_price: item.product_price,
+            product_discount: item.product_discount,
+            exposition_term: item.exposition_term,
+            discount_price_1: item.discount_price_1,
+            discount_price_2: item.discount_price_2,
+            discount_price_3: item.discount_price_3,
+            is_VAT_Excise: item.is_VAT_Excise,
+            excise_product: item.excise_product ?? false,
+            product_left: incomingQty,
+            is_new_product: item.is_new_product ?? false,
+            updatedAt: now,
+            Subcategories_Products_cat_subcat_idToSubcategories: {
+              connect: { id: item.cat_subcat_id },
             },
-          });
-        }
+            Categories: { connect: { cat_1C_id: item.product_category! } },
+            Subcategories: { connect: { subcat_1C_id: item.product_subcategory! } },
+            Sales: { connect: { sale_custom_id: saleId } },
+            ...(item.product_division != null && {
+              ProductsDivisions: { connect: { division_custom_id: item.product_division } },
+            }),
+          },
+        });
 
         // Create a lot entry for the incoming stock and recalculate product_left from all active lots
         if (incomingQty > 0) {
