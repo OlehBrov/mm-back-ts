@@ -210,7 +210,10 @@ export class StoreService {
             },
           ],
         },
-        { product_left: { not: null, gt: 0 } },
+        // No gt:0 here on purpose: scanning must allow a sale even when stock is 0
+        // (clamped at 0 on purchase, see cart.service.ts updateStock) — only the
+        // screen listing (getAllStoreProducts/searchProducts) hides zero-quantity products.
+        { product_left: { not: null } },
         vatExcludeFilter,
       ],
     };

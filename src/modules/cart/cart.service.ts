@@ -417,14 +417,26 @@ export class CartService {
   private async updateStock(products: EnrichedProduct[]): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       for (const p of products) {
+        // Scanning allows a sale even at 0 stock — clamp at 0 instead of a blind
+        // decrement so it never goes negative.
+        const current = await tx.products.findUnique({
+          where: { id: p.id },
+          select: { product_left: true },
+        });
+        const newLeft = Math.max(0, Number(current?.product_left ?? 0) - p.inCartQuantity);
         await tx.products.update({
           where: { id: p.id },
-          data: { product_left: { decrement: p.inCartQuantity } },
+          data: { product_left: newLeft },
         });
         if (p.product_lot) {
+          const currentLot = await tx.loadProducts.findUnique({
+            where: { id: p.product_lot },
+            select: { products_left: true },
+          });
+          const newLotLeft = Math.max(0, Number(currentLot?.products_left ?? 0) - p.inCartQuantity);
           await tx.loadProducts.update({
             where: { id: p.product_lot },
-            data: { products_left: { decrement: p.inCartQuantity } },
+            data: { products_left: newLotLeft },
           });
         }
       }
